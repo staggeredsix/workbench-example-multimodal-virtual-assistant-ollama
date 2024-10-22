@@ -26,11 +26,13 @@
 
 # Project Description
 This is an [NVIDIA AI Workbench](https://www.nvidia.com/en-us/deep-learning-ai/solutions/data-science/workbench/) project for developing a virtual product assistant that leverages a multimodal RAG pipeline with fallback to websearch. Users will be able to leverage two powerful RAG-based chat applications:
-* **Control-Panel**: This customizable gradio application enables users to add webpages, PDFs, images, and videos to a local LanceDB vectorstore and submit queries to them. Users can run inference with: 
-  * Cloud endpoints using the [NVIDIA API Catalog](https://build.nvidia.com/explore/discover). These use NVIDIA-managed model endpoints to generate responses to user queries for easy accessibility. 
-  * Self-hosted endpoints using NVIDIA Inference Microservices (NIMs). These are custom endpoints on self-managed hardware that can be used to generate responses while keeping the entire end-to-end flow 'in-house'. 
-      * Third party self-hosted microservices that support the OpenAI API standard can be used as well, like Ollama.
+* **Control-Panel**: This customizable gradio application enables users to add webpages, PDFs, images, and videos to a local LanceDB vectorstore and submit queries to them. 
 * **Public-Chat**: With documents loaded, this customizable gradio application is a "read-only" chatbot that developers can deploy to end users using the AI Workbench shareable-URL feature.
+
+With either app, users can run inference with: 
+  * **Cloud endpoints** using the [NVIDIA API Catalog](https://build.nvidia.com/explore/discover): These use NVIDIA-managed model endpoints to generate responses to user queries for easy accessibility. 
+  * **Self-hosted endpoints** using [NVIDIA Inference Microservices (NIM)](https://www.nvidia.com/en-us/ai/): These are custom endpoints on self-managed hardware that can be used to generate responses while keeping the entire end-to-end flow 'in-house'. 
+      * Third party self-hosted microservices that support the OpenAI API standard can be used as well, like Ollama.
 
 <img src="./code/chatui/static/example.gif" width="100%" height="auto">
 

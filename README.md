@@ -93,11 +93,11 @@ On the right hand side, users will see a collapsable settings panel with several
 
 This tab holds every user-configurable setting for each of the LLM components of the RAG pipeline: 
 
-* Router
-* Retrieval Grader
-* Generator
-* Hallucination Grader
-* Answer Grader
+* **Router**: This component is responsible for routing the user query to the relevant pipeline
+* **Retrieval Grader**: This component grades for relevant retrieved documents and filters out irrelevant documents. 
+* **Generator**: This components uses the relevant retrieved documents as context to generate a response. 
+* **Hallucination Grader**: This component grades the response based on faithfulness to the context.
+* **Answer Grader**: This component grades the response based on whether it answers the original query. 
 
 Expanding any such entry will yield a panel where users can specify the model they would like to use for that particular component from a dropdown (using NVIDIA API Catalog endpoints), or they can specify their own remotely running self-hosted NVIDIA NIM custom endpoint.
 

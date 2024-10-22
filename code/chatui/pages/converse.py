@@ -70,6 +70,26 @@ _LOCAL_CSS = """
 #rag-inputs .svelte-s1r2yt {
     color: #76b900;
 }
+#router_button {
+    background-color: #F5CCCB !important;
+    color: red !important;
+}
+#retrieval_button {
+    background-color: #B3D6FB !important;
+    color: blue !important;
+}
+#generator_button {
+    background-color: #B3D6FB !important;
+    color: blue !important;
+}
+#hallucination_button {
+    background-color: #BFEFBF !important;
+    color: green !important;
+}
+#answer_button {
+    background-color: #BFEFBF !important;
+    color: green !important;
+}
 """
 
 sys.stdout = logger.Logger("/project/code/output.log")
@@ -171,7 +191,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         ########################
                         ##### ROUTER MODEL #####
                         ########################
-                        router_btn = gr.Button("Router", variant="sm")
+                        router_btn = gr.Button("Router", variant="sm", elem_id="router_button")
                         with gr.Group(visible=False) as group_router:
                             with gr.Tabs(selected=0) as router_tabs:
                                 with gr.TabItem("API Endpoints", id=0) as router_api:
@@ -210,7 +230,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         ##################################
                         ##### RETRIEVAL GRADER MODEL #####
                         ##################################
-                        retrieval_btn = gr.Button("Retrieval Grader", variant="sm")
+                        retrieval_btn = gr.Button("Retrieval Grader", variant="sm", elem_id="retrieval_button")
                         with gr.Group(visible=False) as group_retrieval:
                             with gr.Tabs(selected=0) as retrieval_tabs:
                                 with gr.TabItem("API Endpoints", id=0) as retrieval_api:
@@ -248,7 +268,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         ###########################
                         ##### GENERATOR MODEL #####
                         ###########################
-                        generator_btn = gr.Button("Generator", variant="sm")
+                        generator_btn = gr.Button("Generator", variant="sm", elem_id="generator_button")
                         with gr.Group(visible=False) as group_generator:
                             with gr.Tabs(selected=0) as generator_tabs:
                                 with gr.TabItem("API Endpoints", id=0) as generator_api:
@@ -286,7 +306,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         ######################################
                         ##### HALLUCINATION GRADER MODEL #####
                         ######################################
-                        hallucination_btn = gr.Button("Hallucination Grader", variant="sm")
+                        hallucination_btn = gr.Button("Hallucination Grader", variant="sm", elem_id="hallucination_button")
                         with gr.Group(visible=False) as group_hallucination:
                             with gr.Tabs(selected=0) as hallucination_tabs:
                                 with gr.TabItem("API Endpoints", id=0) as hallucination_api:
@@ -324,7 +344,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         ###############################
                         ##### ANSWER GRADER MODEL #####
                         ###############################
-                        answer_btn = gr.Button("Answer Grader", variant="sm")
+                        answer_btn = gr.Button("Answer Grader", variant="sm", elem_id="answer_button")
                         with gr.Group(visible=False) as group_answer:
                             with gr.Tabs(selected=0) as answer_tabs:
                                 with gr.TabItem("API Endpoints", id=0) as answer_api:

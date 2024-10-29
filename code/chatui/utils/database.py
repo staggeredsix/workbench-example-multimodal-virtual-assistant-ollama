@@ -190,7 +190,7 @@ def upload_video_url(videos: List[str]):
         video_to_audio(filepath, output_audio_path)
         text_data = audio_to_text(output_audio_path)
     
-        with open(output_folder + "output_text_" + str(num_vids) + ".txt", "w") as file:
+        with open(output_folder + "yt_output_text_" + str(num_vids) + ".txt", "w") as file:
             file.write(text_data)
         print("Text data saved to file")
         file.close()
@@ -267,7 +267,7 @@ def upload_image(images: List[str]):
         shutil.move(image_path.name, output_folder + "output_image_" + str(num_images) + "." + image_path.name.split(".")[1])
         text_data = generate_image_description(image_b64)["choices"][0]["message"]["content"]
     
-        with open(output_folder + "output_text_" + str(num_images) + ".txt", "w") as file:
+        with open(output_folder + "img_output_text_" + str(num_images) + ".txt", "w") as file:
             file.write(text_data)
         print("Text data saved to file")
         file.close()
@@ -311,7 +311,7 @@ def upload_video(videos: List[str]):
         video_to_audio(filepath, output_audio_path)
         text_data = audio_to_text(output_audio_path)
     
-        with open(output_folder + "output_text_" + str(num_vids) + ".txt", "w") as file:
+        with open(output_folder + "vid_output_text_" + str(num_vids) + ".txt", "w") as file:
             file.write(text_data)
         print("Text data saved to file")
         file.close()
@@ -427,8 +427,7 @@ def initialize_web_retriever():
 def get_webpage_retriever(): 
     """ This is a helper function for returning the retriever object of the web vector store. """
     global web_vectorstore
-    retriever = web_vectorstore.as_retriever(search_kwargs={"k": 3})
-    return retriever
+    return web_vectorstore 
 
 def initialize_pdf_retriever():
     """ This is a helper function for initializing the pdf retriever on start up. """
@@ -443,5 +442,4 @@ def initialize_pdf_retriever():
 def get_pdf_retriever(): 
     """ This is a helper function for returning the retriever object of the pdf vector store. """
     global pdf_vectorstore
-    retriever = pdf_vectorstore.as_retriever(search_kwargs={"k": 3})
-    return retriever
+    return pdf_vectorstore

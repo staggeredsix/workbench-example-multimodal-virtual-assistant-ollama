@@ -30,21 +30,6 @@ from chatui_public.utils import database, nim
 from typing import List
 from langchain.schema import Document
 
-def node_to_document(node_with_score) -> Document:
-    """ A helper function for converting a llamaindex node to a langchain document type. """
-    return Document(
-        page_content=node_with_score.node.text,
-        metadata={
-            **node_with_score.node.metadata,
-            "score": node_with_score.score
-        }
-    )
-
-def convert_nodes_to_documents(nodes_with_score) -> List[Document]:
-    """ A helper function for converting llamaindex nodes to langchain documents. """
-    return [node_to_document(node) for node in nodes_with_score]
-
-
 class GraphState(TypedDict):
     """
     Represents the state of our graph.
@@ -94,8 +79,29 @@ class GraphState(TypedDict):
 
 from langchain.schema import Document
 
-### Nodes
+def node_to_document(node_with_score) -> Document:
+    """ A helper function for converting a llamaindex node to a langchain document type. """
+    return (Document(
+        page_content=node_with_score.node.text,
+        metadata={
+            **node_with_score.node.metadata,
+            "score": node_with_score.score
+        }
+    ), node_with_score.score)
 
+def convert_nodes_to_documents(nodes_with_score) -> List[Document]:
+    """ A helper function for converting llamaindex nodes to langchain documents. """
+    return [node_to_document(node) for node in nodes_with_score]
+
+def sort_and_filter(doc_score_list):
+    # Filter out tuples with score 0.0
+    filtered_list = filter(lambda x: x[1] != 0.0, doc_score_list)
+    # Sort the list of tuples by the second element (score) in descending order
+    sorted_list = sorted(filtered_list, key=lambda x: x[1], reverse=True)
+    # Extract and return only the documents from the tuples
+    return [doc for doc, score in sorted_list]
+
+### Nodes
 
 def retrieve(state):
     """
@@ -117,16 +123,20 @@ def retrieve(state):
     # Retrieval
     
     if os.path.exists('/project/data/lancedb/web_collection.lance'):
+        print("---RETRIEVING WEBPAGES---")
         web_retriever = database.get_webpage_retriever()
-        webpages = web_retriever.invoke(question)
+        webpages = web_retriever.similarity_search_with_score(question, k=3)
     if os.path.exists('/project/data/lancedb/pdf_collection.lance'):
+        print("---RETRIEVING PDFS---")
         pdf_retriever = database.get_pdf_retriever()
-        pdfs = pdf_retriever.invoke(question)
+        pdfs = pdf_retriever.similarity_search_with_score(question, k=3)
     if os.path.exists('/project/data/lancedb/text_img_collection.lance') and os.path.exists("/project/data/mixed_data/"):
+        print("---RETRIEVING IMAGES AND VIDEO---")
         img_retriever = database.get_img_retriever()
         images = convert_nodes_to_documents(img_retriever.retrieve(question))
     
-    documents = webpages + pdfs + images
+    print("---RERANKING RETRIEVED DOCUMENTS---")
+    documents = sort_and_filter(webpages + pdfs + images)
     return {"documents": documents, "question": question}
 
 

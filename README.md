@@ -27,9 +27,11 @@
 # Project Description
 This is an [NVIDIA AI Workbench](https://www.nvidia.com/en-us/deep-learning-ai/solutions/data-science/workbench/) project for developing a virtual product assistant that leverages a multimodal RAG pipeline with fallback to websearch to inform, troubleshoot, and answer user queries on the NVIDIA AI Workbench software product. Users will be able to leverage two powerful RAG-based chat applications:
 * **Control-Panel**: This customizable gradio application enables users to add webpages, PDFs, images, and videos to a local LanceDB vectorstore and submit queries to them.
-  * A starter knowledge base is included by default under ``Webpage URLs`` consisting of AI Workbench documentation, troubleshooting, and project README files. Use this to get started, then add additional files to further augment the assistant!
+  * A starter knowledge base is included by default under ``Webpage URLs`` consisting of documentation, troubleshooting, and project README files.
+  * Use this to get started, then add additional files to further augment the assistant!
   * Ready to focus the assistant on a different product? Check out this [guide](#customize-your-virtual-assistant) to find out how! 
-* **Public-Chat**: With all documents loaded, this customizable gradio application is a "read-only" chatbot that developers can deploy to end users using the AI Workbench shareable-URL feature. Find out how to share your apps [here](#share-your-virtual-assistant)
+* **Public-Chat**: With all documents loaded, this customizable gradio application is a "read-only" chatbot that developers can deploy to end users using the AI Workbench shareable-URL feature.
+  * Find out how to share your apps [here](#share-your-virtual-assistant)
 
 With either app, users can run inference with: 
   * **Cloud endpoints** using the [NVIDIA API Catalog](https://build.nvidia.com/explore/discover): These use NVIDIA-managed model endpoints to generate responses to user queries for easy accessibility. 

@@ -385,7 +385,7 @@ def clear():
 def initialize_img_retriever():
     """ This is a helper function for initializing the image retriever on start up. """
     global text_store, image_store, storage_context, documents, img_vectorstore
-    if os.path.exists('/project/data/mixed_data/'):
+    if os.path.exists('/project/data/mixed_data/') and bool(os.listdir('/project/data/mixed_data/')):
         text_store = LanceDBVectorStore(uri="/project/data/lancedb", 
                                         table_name="text_img_collection", 
                                         embedding=NVIDIAEmbeddings(model='NV-Embed-QA'))

@@ -23,7 +23,7 @@ from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_community.tools.tavily_search import TavilySearchResults
 
-from chatui.utils import database, nim
+from chatui.utils import database, nim, ollama
 
 ### State
 
@@ -75,6 +75,11 @@ class GraphState(TypedDict):
     nim_retrieval_id: str
     nim_hallucination_id: str
     nim_answer_id: str
+    # New Ollama-specific state attributes
+    use_ollama: bool
+    ollama_server: str
+    ollama_port: str
+    ollama_model: str
 
 
 from langchain.schema import Document
@@ -100,6 +105,41 @@ def sort_and_filter(doc_score_list):
     sorted_list = sorted(filtered_list, key=lambda x: x[1], reverse=True)
     # Extract and return only the documents from the tuples
     return [doc for doc, score in sorted_list]
+
+### Helper function to select the appropriate LLM based on settings
+def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key):
+    """
+    Helper function to get the appropriate LLM based on the state configuration.
+    
+    Args:
+        state: The current state dictionary
+        model_key: Key for the model ID in the state
+        use_nim_key: Key for the flag indicating whether to use NIM
+        nim_ip_key: Key for the NIM IP address
+        nim_port_key: Key for the NIM port
+        nim_id_key: Key for the NIM model ID
+        
+    Returns:
+        An instance of the appropriate LLM class
+    """
+    # If Ollama is enabled, use that
+    if state.get("use_ollama", False):
+        return ollama.OllamaChatModel(
+            ollama_server=state["ollama_server"],
+            ollama_port=state["ollama_port"],
+            model_name=state["ollama_model"],
+            temperature=0.7
+        )
+    # Otherwise, use NIM or NVIDIA API as before
+    elif state[use_nim_key]:
+        return nim.CustomChatOpenAI(
+            custom_endpoint=state[nim_ip_key], 
+            port=state[nim_port_key] if len(state[nim_port_key]) > 0 else "8000",
+            model_name=state[nim_id_key] if len(state[nim_id_key]) > 0 else "meta/llama3-8b-instruct",
+            temperature=0.7
+        )
+    else:
+        return ChatNVIDIA(model=state[model_key], temperature=0.7)
 
 ### Nodes
 
@@ -159,10 +199,16 @@ def generate(state):
         template=state["prompt_generator"],
         input_variables=["question", "document"],
     )
-    llm = nim.CustomChatOpenAI(custom_endpoint=state["nim_generator_ip"], 
-                               port=state["nim_generator_port"] if len(state["nim_generator_port"]) > 0 else "8000",
-                               model_name=state["nim_generator_id"] if len(state["nim_generator_id"]) > 0 else "meta/llama3-8b-instruct",
-                               temperature=0.7) if state["generator_use_nim"] else ChatNVIDIA(model=state["generator_model_id"], temperature=0.7)
+    
+    llm = get_llm(
+        state,
+        "generator_model_id", 
+        "generator_use_nim", 
+        "nim_generator_ip", 
+        "nim_generator_port", 
+        "nim_generator_id"
+    )
+    
     rag_chain = prompt | llm | StrOutputParser()
     generation = rag_chain.invoke({"context": documents, "question": question})
     return {"documents": documents, "question": question, "generation": generation}
@@ -191,10 +237,16 @@ def grade_documents(state):
         template=state["prompt_retrieval"],
         input_variables=["question", "document"],
     )
-    llm = nim.CustomChatOpenAI(custom_endpoint=state["nim_retrieval_ip"], 
-                               port=state["nim_retrieval_port"] if len(state["nim_retrieval_port"]) > 0 else "8000",
-                               model_name=state["nim_retrieval_id"] if len(state["nim_retrieval_id"]) > 0 else "meta/llama3-8b-instruct",
-                               temperature=0.7) if state["retrieval_use_nim"] else ChatNVIDIA(model=state["retrieval_model_id"], temperature=0)
+    
+    llm = get_llm(
+        state,
+        "retrieval_model_id", 
+        "retrieval_use_nim", 
+        "nim_retrieval_ip", 
+        "nim_retrieval_port", 
+        "nim_retrieval_id"
+    )
+    
     retrieval_grader = prompt | llm | JsonOutputParser()
     for d in documents:
         score = retrieval_grader.invoke(
@@ -264,10 +316,16 @@ def route_question(state):
         template=state["prompt_router"],
         input_variables=["question"],
     )
-    llm = nim.CustomChatOpenAI(custom_endpoint=state["nim_router_ip"], 
-                               port=state["nim_router_port"] if len(state["nim_router_port"]) > 0 else "8000",
-                               model_name=state["nim_router_id"] if len(state["nim_router_id"]) > 0 else "meta/llama3-8b-instruct",
-                               temperature=0.7) if state["router_use_nim"] else ChatNVIDIA(model=state["router_model_id"], temperature=0)
+    
+    llm = get_llm(
+        state,
+        "router_model_id", 
+        "router_use_nim", 
+        "nim_router_ip", 
+        "nim_router_port", 
+        "nim_router_id"
+    )
+    
     question_router = prompt | llm | JsonOutputParser()
     source = question_router.invoke({"question": question})
     print(source)
@@ -331,11 +389,17 @@ def grade_generation_v_documents_and_question(state):
         template=state["prompt_hallucination"],
         input_variables=["generation", "documents"],
     )
-    llm = nim.CustomChatOpenAI(custom_endpoint=state["nim_hallucination_ip"], 
-                               port=state["nim_hallucination_port"] if len(state["nim_hallucination_port"]) > 0 else "8000",
-                               model_name=state["nim_hallucination_id"] if len(state["nim_hallucination_id"]) > 0 else "meta/llama3-8b-instruct",
-                               temperature=0.7) if state["hallucination_use_nim"] else ChatNVIDIA(model=state["hallucination_model_id"], temperature=0)
-    hallucination_grader = prompt | llm | JsonOutputParser()
+    
+    llm_hallucination = get_llm(
+        state,
+        "hallucination_model_id", 
+        "hallucination_use_nim", 
+        "nim_hallucination_ip", 
+        "nim_hallucination_port", 
+        "nim_hallucination_id"
+    )
+    
+    hallucination_grader = prompt | llm_hallucination | JsonOutputParser()
 
     score = hallucination_grader.invoke(
         {"documents": documents, "generation": generation}
@@ -347,11 +411,17 @@ def grade_generation_v_documents_and_question(state):
         template=state["prompt_answer"],
         input_variables=["generation", "question"],
     )
-    llm = nim.CustomChatOpenAI(custom_endpoint=state["nim_answer_ip"], 
-                               port=state["nim_answer_port"] if len(state["nim_answer_port"]) > 0 else "8000",
-                               model_name=state["nim_answer_id"] if len(state["nim_answer_id"]) > 0 else "meta/llama3-8b-instruct",
-                               temperature=0.7) if state["answer_use_nim"] else ChatNVIDIA(model=state["answer_model_id"], temperature=0)
-    answer_grader = prompt | llm | JsonOutputParser()
+    
+    llm_answer = get_llm(
+        state,
+        "answer_model_id", 
+        "answer_use_nim", 
+        "nim_answer_ip", 
+        "nim_answer_port", 
+        "nim_answer_id"
+    )
+    
+    answer_grader = prompt | llm_answer | JsonOutputParser()
     
     if grade == "yes":
         print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")

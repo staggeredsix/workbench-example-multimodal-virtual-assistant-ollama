@@ -25,9 +25,10 @@ import subprocess
 import time
 import sys
 
-from chatui_public import assets, chat_client
-from chatui_public.prompts import prompts_llama3, prompts_mistral, defaults
-from chatui_public.utils import compile, database, logger
+from chatui import assets, chat_client
+from chatui.prompts import prompts_llama3, prompts_mistral, defaults
+from chatui.utils import compile, database, logger, ollama
+
 
 from langgraph.graph import END, StateGraph
 
@@ -128,6 +129,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
         hallucination_use_nim = gr.State(False)
         answer_use_nim = gr.State(False)
         initialized = gr.State(False)
+        use_ollama_state = gr.State(False)
+        ollama_server_state = gr.State("http://localhost")
+        ollama_port_state = gr.State("11434") 
+        ollama_model_state = gr.State("llama3")
 
         """ Build the Chat Application. """
         
@@ -139,9 +144,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                 # Main chatbot panel. 
                 with gr.Row(equal_height=True):
                     with gr.Column(min_width=350):
-                        chatbot = gr.Chatbot(height=480, 
-                                             avatar_images=("https://media.githubusercontent.com/media/NVIDIA/nim-anywhere/d2302a65360fd4606287410d120780dfe26f78c5/code/frontend/_static/images/user_icon.svg", "https://media.githubusercontent.com/media/NVIDIA/nim-anywhere/d2302a65360fd4606287410d120780dfe26f78c5/code/frontend/_static/images/bot_icon.svg"), 
-                                             show_label=False)
+                        chatbot = gr.Chatbot(height=480, show_label=False)
 
                 # Message box for user input
                 with gr.Row(equal_height=True):
@@ -171,11 +174,11 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             
             # Right column to display all relevant settings
             with gr.Column(scale=10, min_width=350) as settings_column:
-
+                
                 with gr.Row():
                     agentic_flow = gr.Image("/project/code/chatui/static/agentic-flow.png", 
                                             show_label=False,
-                                            show_download_button=True,
+                                            show_download_button=False,
                                             interactive=False)
                 
                 with gr.Tabs(selected=0) as settings_tabs:
@@ -187,24 +190,9 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         initialize = gr.Button("Initialize Virtual Assistant", variant="primary")
                         gr.Markdown("<br />")
                     
-                    # Second tab item is for the actions output console. 
-                    with gr.TabItem("Monitor", id=1, interactive=False, visible=False) as console_settings:
-                        gr.Markdown("")
-                        gr.Markdown("Monitor pipeline actions and view the trace of the latest response.\n")
-                        with gr.Tabs(selected=0) as console_tabs:
-                            with gr.TabItem("Actions Console", id=0) as actions_tab:
-                                logs = gr.Textbox(show_label=False, lines=15, max_lines=15, interactive=False)
-                            with gr.TabItem("Response Trace", id=1) as trace_tab:
-                                actions = gr.JSON(
-                                    scale=1,
-                                    show_label=False,
-                                    visible=True,
-                                    elem_id="contextbox",
-                                )
-                    
                     # Settings for each component model of the workflow
-                    with gr.TabItem("Models", id=2, interactive=False, visible=False) as agent_settings:
-
+                    with gr.TabItem("Models", id=1, interactive=False, visible=False) as agent_settings:
+    
                         ########################
                         ##### ROUTER MODEL #####
                         ########################
@@ -237,12 +225,12 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 with gr.TabItem("Hide", id=2) as router_hide:
                                     gr.Markdown("")
 
-                            with gr.Accordion("Router Prompt", 
+                            with gr.Accordion("Configure the Router Prompt", 
                                               elem_id="rag-inputs", open=False) as accordion_router:
                                 prompt_router = gr.Textbox(value=prompts_llama3.router_prompt,
-                                                           lines=10,
+                                                           lines=12,
                                                            show_label=False,
-                                                           interactive=False)
+                                                           interactive=True)
     
                         ##################################
                         ##### RETRIEVAL GRADER MODEL #####
@@ -275,12 +263,12 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 with gr.TabItem("Hide", id=2) as retrieval_hide:
                                     gr.Markdown("")
                             
-                            with gr.Accordion("Retrieval Grader Prompt", 
+                            with gr.Accordion("Configure the Retrieval Grader Prompt", 
                                               elem_id="rag-inputs", open=False) as accordion_retrieval:
                                 prompt_retrieval = gr.Textbox(value=prompts_llama3.retrieval_prompt,
-                                                                     lines=10,
+                                                                     lines=21,
                                                                      show_label=False,
-                                                                     interactive=False)
+                                                                     interactive=True)
     
                         ###########################
                         ##### GENERATOR MODEL #####
@@ -313,12 +301,12 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 with gr.TabItem("Hide", id=2) as generator_hide:
                                     gr.Markdown("")
                             
-                            with gr.Accordion("Generator Prompt", 
+                            with gr.Accordion("Configure the Generator Prompt", 
                                               elem_id="rag-inputs", open=False) as accordion_generator:
                                 prompt_generator = gr.Textbox(value=prompts_llama3.generator_prompt,
-                                                          lines=10,
+                                                          lines=15,
                                                           show_label=False,
-                                                          interactive=False)
+                                                          interactive=True)
     
                         ######################################
                         ##### HALLUCINATION GRADER MODEL #####
@@ -351,12 +339,12 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 with gr.TabItem("Hide", id=2) as hallucination_hide:
                                     gr.Markdown("")
                             
-                            with gr.Accordion("Hallucination Prompt", 
+                            with gr.Accordion("Configure the Hallucination Prompt", 
                                               elem_id="rag-inputs", open=False) as accordion_hallucination:
                                 prompt_hallucination = gr.Textbox(value=prompts_llama3.hallucination_prompt,
-                                                                         lines=10,
+                                                                         lines=17,
                                                                          show_label=False,
-                                                                         interactive=False)
+                                                                         interactive=True)
     
                         ###############################
                         ##### ANSWER GRADER MODEL #####
@@ -386,18 +374,139 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                info = "If none specified, defaults to: meta/llama3-8b-instruct", 
                                                elem_id="rag-inputs")
 
-                                with gr.TabItem("Hide", id=3, interactive=True, visible=True) as answer_hide:
+                                with gr.TabItem("Hide", id=2) as answer_hide:
                                     gr.Markdown("")
                                     
-                            with gr.Accordion("Answer Prompt", 
+                            with gr.Accordion("Configure the Answer Prompt", 
                                               elem_id="rag-inputs", open=False) as accordion_answer:
                                 prompt_answer = gr.Textbox(value=prompts_llama3.answer_prompt,
-                                                                  lines=10,
+                                                                  lines=17,
                                                                   show_label=False,
-                                                                  interactive=False)
+                                                                  interactive=True)
+                        
+                    # Second tab item is for uploading to and clearing the vector database
+                    # Ollama Configuration Tab
+                    with gr.TabItem("Ollama", id=3, interactive=False, visible=False) as ollama_settings:
+                        gr.Markdown("## Ollama Configuration")
+                        gr.Markdown("Configure Ollama settings to use local or remote Ollama models")
+                        
+                        use_ollama = gr.Checkbox(
+                            label="Use Ollama",
+                            value=False,
+                            info="Enable to use Ollama instead of API endpoints"
+                        )
+                        
+                        with gr.Row():
+                            ollama_server = gr.Textbox(
+                                label="Ollama Server",
+                                placeholder="http://localhost",
+                                value="http://localhost",
+                                info="URL of the Ollama server"
+                            )
+                            ollama_port = gr.Textbox(
+                                label="Ollama Port",
+                                placeholder="11434",
+                                value="11434",
+                                info="Port of the Ollama server"
+                            )
+                        
+                        with gr.Row():
+                            ollama_model = gr.Textbox(
+                                label="Model Name",
+                                placeholder="llama3",
+                                value="llama3",
+                                info="Name of the Ollama model to use"
+                            )
+                            refresh_ollama_models = gr.Button(
+                                value="Refresh Models",
+                                variant="secondary"
+                            )
+                        
+                        available_models = gr.Dropdown(
+                            label="Available Models",
+                            choices=[],
+                            info="Available models on the Ollama server",
+                            interactive=True
+                        )
+                        
+                        with gr.Row():
+                            pull_model = gr.Button(
+                                value="Pull Model",
+                                variant="primary"
+                            )
+                            pull_status = gr.Textbox(
+                                label="Status",
+                                interactive=False
+                            )
+
+                    with gr.TabItem("Database", id=2, interactive=False, visible=False) as document_settings:
+                        gr.Markdown("")
+                        gr.Markdown("Upload webpages, pdfs, images, and videos to the vector store.<br />**Note:** Clearing docs will empty the database!\n")
+                        with gr.Tabs(selected=0) as document_tabs:
+                            with gr.TabItem("Webpages", id=0) as url_tab:
+                                web_url_btn = gr.Button("Webpage URLs", variant="sm")
+                                with gr.Group(visible=False) as group_web_url:
+                                    url_docs = gr.Textbox(value=defaults.webpage_url_defaults,
+                                                      lines=5, 
+                                                      info="Enter a list of URLs, one per line", 
+                                                      label="Webpage URLs", 
+                                                      elem_id="rag-inputs",
+                                                      interactive=True)
+                                
+                                    with gr.Row():
+                                        url_docs_upload = gr.Button(value="Upload Docs")
+                                        url_docs_clear = gr.Button(value="Clear Docs")
+
+                                video_url_btn = gr.Button("YouTube URLs", variant="sm")
+                                with gr.Group(visible=False) as group_video_url:
+                                    url_videos = gr.Textbox(value=defaults.video_url_defaults,
+                                                          lines=5, 
+                                                          info="Enter a list of URLs, one per line", 
+                                                          label="Youtube URLs", 
+                                                          elem_id="rag-inputs",
+                                                          interactive=True)
+                                    with gr.Row():
+                                        url_videos_upload = gr.Button(value="Upload Videos")
+                                        url_videos_clear = gr.Button(value="Clear Docs")
+                            
+                            with gr.TabItem("File Upload", id=1) as pdf_tab:
+                                pdf_upload_btn = gr.Button("PDF Upload", variant="sm")
+                                with gr.Group(visible=False) as group_pdf_upload:
+                                    pdf_docs_upload = gr.File(interactive=True, 
+                                                              label="PDFs", 
+                                                              file_types=[".pdf"], 
+                                                              file_count="multiple")
+                                image_upload_btn = gr.Button("Image Upload", variant="sm")
+                                with gr.Group(visible=False) as group_image_upload:
+                                    image_upload = gr.File(interactive=True, 
+                                                          label="Images", 
+                                                          file_types=["image"], 
+                                                          file_count="multiple")
+                                video_upload_btn = gr.Button("Video Upload", variant="sm")
+                                with gr.Group(visible=False) as group_video_upload:
+                                    video_upload = gr.File(interactive=True, 
+                                                          label="Videos", 
+                                                          file_types=["video"], 
+                                                          file_count="multiple")
+                                file_upload_clear = gr.Button(value="Clear Docs")
     
+                    # Third tab item is for the actions output console. 
+                    with gr.TabItem("Monitor", id=3, interactive=False, visible=False) as console_settings:
+                        gr.Markdown("")
+                        gr.Markdown("Monitor pipeline actions and view the trace of the latest response.\n")
+                        with gr.Tabs(selected=0) as console_tabs:
+                            with gr.TabItem("Actions Console", id=0) as actions_tab:
+                                logs = gr.Textbox(show_label=False, lines=15, max_lines=15, interactive=False)
+                            with gr.TabItem("Response Trace", id=1) as trace_tab:
+                                actions = gr.JSON(
+                                    scale=1,
+                                    show_label=False,
+                                    visible=True,
+                                    elem_id="contextbox",
+                                )
+                    
                     # Third tab item is for collapsing the entire settings pane for readability. 
-                    with gr.TabItem("Hide All Settings", id=3) as hide_all_settings:
+                    with gr.TabItem("Hide All Settings", id=4, interactive=True, visible=True) as hide_all_settings:
                         gr.Markdown("")
 
         page.load(logger.read_logs, None, logs, every=1)
@@ -425,7 +534,9 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                 settings_tabs: gr.update(selected=1), 
                 welcome_settings: gr.update(visible=False, interactive=False), 
                 agent_settings: gr.update(visible=True, interactive=True), 
-                console_settings: gr.update(visible=True, interactive=True), 
+                document_settings: gr.update(visible=True, interactive=True), 
+                console_settings: gr.update(visible=True, interactive=True),
+                ollama_settings: gr.update(visible=True, interactive=True),
                 agentic_flow: gr.update(visible=True),
             }
 
@@ -438,6 +549,8 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                settings_tabs, 
                                                welcome_settings, 
                                                agent_settings, 
+                                               ollama_settings,
+                                               document_settings, 
                                                console_settings, 
                                                agentic_flow])
 
@@ -683,6 +796,74 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                                      hallucination_btn,
                                                                      answer_btn])
 
+        """ This helper function tracks which webpage is currently open for user upload. """
+        
+        def _toggle_webpages(btn: str):
+            if btn == "Webpage URLs":
+                group_visible = [True, False]
+                button_visible = [False, True]
+            elif btn == "YouTube URLs":
+                group_visible = [False, True]
+                button_visible = [True, False]
+            return {
+                group_web_url: gr.update(visible=group_visible[0]),
+                group_video_url: gr.update(visible=group_visible[1]),
+                web_url_btn: gr.update(visible=button_visible[0]),
+                video_url_btn: gr.update(visible=button_visible[1]),            
+            }
+        
+        web_url_btn.click(_toggle_webpages, [web_url_btn], [group_web_url,
+                                                         group_video_url,
+                                                         web_url_btn,
+                                                         video_url_btn])
+
+        video_url_btn.click(_toggle_webpages, [video_url_btn], [group_web_url,
+                                                         group_video_url,
+                                                         web_url_btn,
+                                                         video_url_btn])
+
+        """ This helper function tracks which local files are currently open for user upload. """
+
+        def _toggle_upload(btn: str):
+            if btn == "PDF Upload":
+                group_visible = [True, False, False]
+                button_visible = [False, True, True]
+            elif btn == "Image Upload":
+                group_visible = [False, True, False]
+                button_visible = [True, False, True]
+            elif btn == "Video Upload":
+                group_visible = [False, False, True]
+                button_visible = [True, True, False]
+            return {
+                group_pdf_upload: gr.update(visible=group_visible[0]),
+                group_image_upload: gr.update(visible=group_visible[1]),
+                group_video_upload: gr.update(visible=group_visible[2]),
+                pdf_upload_btn: gr.update(visible=button_visible[0]),
+                image_upload_btn: gr.update(visible=button_visible[1]),            
+                video_upload_btn: gr.update(visible=button_visible[2]),            
+            }
+        
+        pdf_upload_btn.click(_toggle_upload, [pdf_upload_btn], [group_pdf_upload,
+                                                                group_image_upload,
+                                                                group_video_upload,
+                                                                pdf_upload_btn,
+                                                                image_upload_btn,
+                                                                video_upload_btn])
+
+        image_upload_btn.click(_toggle_upload, [image_upload_btn], [group_pdf_upload,
+                                                                group_image_upload,
+                                                                group_video_upload,
+                                                                pdf_upload_btn,
+                                                                image_upload_btn,
+                                                                video_upload_btn])
+
+        video_upload_btn.click(_toggle_upload, [video_upload_btn], [group_pdf_upload,
+                                                                group_image_upload,
+                                                                group_video_upload,
+                                                                pdf_upload_btn,
+                                                                image_upload_btn,
+                                                                video_upload_btn])
+
         """ These helper functions track the API Endpoint selected and regenerates the prompt accordingly. """
         
         def _toggle_model_router(selected_model: str):
@@ -745,6 +926,197 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
         model_generator.change(_toggle_model_generator, [model_generator], [prompt_generator])
         model_hallucination.change(_toggle_model_hallucination, [model_hallucination], [prompt_hallucination])
         model_answer.change(_toggle_model_answer, [model_answer], [prompt_answer])
+        
+        """ These helper functions upload and clear the documents to/from the LanceDB. """
+
+        def _clear_documents(progress=gr.Progress()):
+            progress(0.25, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.5, desc="Clearing Database")
+            database.clear()
+            progress(0.75, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_upload: gr.update(value="Upload Docs", variant="secondary", interactive=True),
+                url_docs_clear: gr.update(value="Docs Cleared", variant="primary", interactive=False),
+                pdf_docs_upload: gr.update(value=None),
+                file_upload_clear: gr.update(value="Docs Cleared", variant="primary", interactive=False),
+                url_videos_upload: gr.update(value="Upload Videos", variant="secondary", interactive=True),
+                url_videos_clear: gr.update(value="Docs Cleared", variant="primary", interactive=False),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        def _upload_webpage_url(docs: str, progress=gr.Progress()):
+            progress(0.2, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.4, desc="Processing URL List")
+            docs_list = docs.splitlines()
+            progress(0.6, desc="Uploading Docs (Be patient, this may take a while)")
+            try:
+                database.upload_webpage_url(docs_list)
+            except Exception as e:
+                gr.Warning("Webpage URL upload failed, try again later. Exception: " + str(e))
+                return {
+                    url_docs_upload: gr.update(value="Upload Docs", variant="secondary", interactive=True),
+                    url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    agentic_flow: gr.update(visible=True),
+                }
+            progress(0.8, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_upload: gr.update(value="Docs Uploaded", variant="primary", interactive=False),
+                url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        url_docs_upload.click(_upload_webpage_url, [url_docs], [url_docs_upload, 
+                                                              url_docs_clear, 
+                                                              file_upload_clear, 
+                                                              url_videos_clear, 
+                                                              agentic_flow])
+        url_docs_clear.click(_clear_documents, [], [url_docs_upload, 
+                                                    url_docs_clear, 
+                                                    pdf_docs_upload, 
+                                                    file_upload_clear, 
+                                                    url_videos_upload, 
+                                                    url_videos_clear, 
+                                                    agentic_flow])
+        
+        def _upload_video_url(videos, progress=gr.Progress()):
+            progress(0.2, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.4, desc="Processing URL List")
+            videos_list = videos.splitlines()
+            progress(0.6, desc="Uploading Videos (Be patient, this may take a while)")
+            try:
+                database.upload_video_url(videos_list)
+            except Exception as e:
+                gr.Warning("Video URL upload failed, try again later. Exception: " + str(e))
+                return {
+                    url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    url_videos_upload: gr.update(value="Upload Videos", variant="secondary", interactive=True),
+                    url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    agentic_flow: gr.update(visible=True),
+                }
+            progress(0.8, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                url_videos_upload: gr.update(value="Videos Uploaded", variant="primary", interactive=False),
+                url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        url_videos_upload.click(_upload_video_url, [url_videos], [url_docs_clear, 
+                                                                                file_upload_clear, 
+                                                                                url_videos_upload, 
+                                                                                url_videos_clear, 
+                                                                                agentic_flow])
+        url_videos_clear.click(_clear_documents, [], [url_docs_upload, 
+                                                      url_docs_clear, 
+                                                      pdf_docs_upload, 
+                                                      file_upload_clear, 
+                                                      url_videos_upload, 
+                                                      url_videos_clear, 
+                                                      agentic_flow])
+
+        def _upload_pdf_documents(files, progress=gr.Progress()):
+            progress(0.25, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.5, desc="Uploading Docs (Be patient, this may take a while)")
+            try:
+                database.upload_pdf(files)
+            except Exception as e:
+                gr.Warning("PDF file upload failed, try again later. Exception: " + str(e))
+                return {
+                    url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    agentic_flow: gr.update(visible=True),
+                }
+            progress(0.75, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        pdf_docs_upload.upload(_upload_pdf_documents, [pdf_docs_upload], [url_docs_clear, 
+                                                                          file_upload_clear, 
+                                                                          url_videos_clear, 
+                                                                          agentic_flow])
+        
+        def _upload_image_documents(files, progress=gr.Progress()):
+            progress(0.25, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.5, desc="Uploading Images (Be patient, this may take a while)")
+            try:
+                database.upload_image(files)
+            except Exception as e:
+                gr.Warning("Image file upload failed, try again later. Exception: " + str(e))
+                return {
+                    url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    agentic_flow: gr.update(visible=True),
+                }
+            progress(0.75, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        image_upload.upload(_upload_image_documents, [image_upload], [url_docs_clear, 
+                                                                          file_upload_clear, 
+                                                                          url_videos_clear, 
+                                                                          agentic_flow])
+
+        def _upload_video_documents(files, progress=gr.Progress()):
+            progress(0.25, desc="Initializing Task")
+            time.sleep(0.75)
+            progress(0.5, desc="Uploading Videos (Be patient, this may take a while)")
+            try:
+                database.upload_video(files)
+            except Exception as e:
+                gr.Warning("Video file upload failed, try again later. Exception: " + str(e))
+                return {
+                    url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                    agentic_flow: gr.update(visible=True),
+                }
+            progress(0.75, desc="Cleaning Up")
+            time.sleep(0.75)
+            return {
+                url_docs_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                file_upload_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                url_videos_clear: gr.update(value="Clear Docs", variant="secondary", interactive=True),
+                agentic_flow: gr.update(visible=True),
+            }
+
+        video_upload.upload(_upload_video_documents, [video_upload], [url_docs_clear, 
+                                                                          file_upload_clear, 
+                                                                          url_videos_clear, 
+                                                                          agentic_flow])
+
+        file_upload_clear.click(_clear_documents, [], [url_docs_upload, 
+                                                    url_docs_clear, 
+                                                    pdf_docs_upload, 
+                                                    file_upload_clear, 
+                                                    url_videos_upload, 
+                                                    url_videos_clear, 
+                                                    agentic_flow])
 
         """ This helper function builds out the submission function call when a user submits a query. """
         
@@ -937,6 +1309,60 @@ def valid_input(query: str):
 
 """ This helper function executes and generates a response to the user query. """
 
+# Ollama functionality
+def _refresh_ollama_models(server, port):
+    try:
+        from chatui.utils.ollama import OllamaChatModel
+        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+        models = ollama_client.list_models()
+        
+        model_names = []
+        for model in models:
+            if 'name' in model:
+                model_names.append(model['name'])
+        
+        return gr.Dropdown.update(choices=model_names)
+    except Exception as e:
+        print(f"Error refreshing Ollama models: {e}")
+        return gr.Dropdown.update(choices=[])
+
+def _pull_ollama_model(server, port, model_name):
+    try:
+        from chatui.utils.ollama import OllamaChatModel
+        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+        success = ollama_client.pull_model(model_name)
+        
+        if success:
+            models_update = _refresh_ollama_models(server, port)
+            return "Model pulled successfully!", models_update
+        else:
+            return "Failed to pull model", gr.Dropdown.update()
+    except Exception as e:
+        print(f"Error pulling Ollama model: {e}")
+        return f"Error: {str(e)}", gr.Dropdown.update()
+
+def _update_ollama_state(use_ollama_val, server, port, model):
+    return use_ollama_val, server, port, model
+    
+# Connect Ollama UI components to functions
+use_ollama.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                 [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_server.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                    [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_port.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                  [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_model.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                   [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+
+refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
+available_models.change(lambda x: x, [available_models], [ollama_model])
+
+def _handle_pull_model(server, port, model_name):
+    status, models_update = _pull_ollama_model(server, port, model_name)
+    return status, models_update
+
+pull_model.click(_handle_pull_model, [ollama_server, ollama_port, ollama_model], [pull_status, available_models])
+
 def _stream_predict(
     client: chat_client.ChatClient,
     app, 
@@ -971,6 +1397,10 @@ def _stream_predict(
     nim_retrieval_id: str,
     nim_hallucination_id: str,
     nim_answer_id: str,
+    use_ollama: bool,
+    ollama_server: str,
+    ollama_port: str,
+    ollama_model: str,
     chat_history: List[Tuple[str, str]],
 ) -> Any:
 
@@ -1004,6 +1434,10 @@ def _stream_predict(
               "nim_retrieval_id": nim_retrieval_id,
               "nim_hallucination_id": nim_hallucination_id,
               "nim_answer_id": nim_answer_id,
+              "use_ollama": use_ollama,
+              "ollama_server": ollama_server,
+              "ollama_port": ollama_port,
+              "ollama_model": ollama_model,
               "answer_use_nim": answer_use_nim}
     
     if not valid_input(question):

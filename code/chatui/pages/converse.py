@@ -27,7 +27,8 @@ import sys
 
 from chatui import assets, chat_client
 from chatui.prompts import prompts_llama3, prompts_mistral, defaults
-from chatui.utils import compile, database, logger
+from chatui.utils import compile, database, logger, ollama
+
 
 from langgraph.graph import END, StateGraph
 
@@ -128,6 +129,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
         hallucination_use_nim = gr.State(False)
         answer_use_nim = gr.State(False)
         initialized = gr.State(False)
+        use_ollama_state = gr.State(False)
+        ollama_server_state = gr.State("http://localhost")
+        ollama_port_state = gr.State("11434") 
+        ollama_model_state = gr.State("llama3")
 
         """ Build the Chat Application. """
         
@@ -380,6 +385,60 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                                   interactive=True)
                         
                     # Second tab item is for uploading to and clearing the vector database
+                    # Ollama Configuration Tab
+                    with gr.TabItem("Ollama", id=3, interactive=False, visible=False) as ollama_settings:
+                        gr.Markdown("## Ollama Configuration")
+                        gr.Markdown("Configure Ollama settings to use local or remote Ollama models")
+                        
+                        use_ollama = gr.Checkbox(
+                            label="Use Ollama",
+                            value=False,
+                            info="Enable to use Ollama instead of API endpoints"
+                        )
+                        
+                        with gr.Row():
+                            ollama_server = gr.Textbox(
+                                label="Ollama Server",
+                                placeholder="http://localhost",
+                                value="http://localhost",
+                                info="URL of the Ollama server"
+                            )
+                            ollama_port = gr.Textbox(
+                                label="Ollama Port",
+                                placeholder="11434",
+                                value="11434",
+                                info="Port of the Ollama server"
+                            )
+                        
+                        with gr.Row():
+                            ollama_model = gr.Textbox(
+                                label="Model Name",
+                                placeholder="llama3",
+                                value="llama3",
+                                info="Name of the Ollama model to use"
+                            )
+                            refresh_ollama_models = gr.Button(
+                                value="Refresh Models",
+                                variant="secondary"
+                            )
+                        
+                        available_models = gr.Dropdown(
+                            label="Available Models",
+                            choices=[],
+                            info="Available models on the Ollama server",
+                            interactive=True
+                        )
+                        
+                        with gr.Row():
+                            pull_model = gr.Button(
+                                value="Pull Model",
+                                variant="primary"
+                            )
+                            pull_status = gr.Textbox(
+                                label="Status",
+                                interactive=False
+                            )
+
                     with gr.TabItem("Database", id=2, interactive=False, visible=False) as document_settings:
                         gr.Markdown("")
                         gr.Markdown("Upload webpages, pdfs, images, and videos to the vector store.<br />**Note:** Clearing docs will empty the database!\n")
@@ -476,7 +535,8 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                 welcome_settings: gr.update(visible=False, interactive=False), 
                 agent_settings: gr.update(visible=True, interactive=True), 
                 document_settings: gr.update(visible=True, interactive=True), 
-                console_settings: gr.update(visible=True, interactive=True), 
+                console_settings: gr.update(visible=True, interactive=True),
+                ollama_settings: gr.update(visible=True, interactive=True),
                 agentic_flow: gr.update(visible=True),
             }
 
@@ -489,6 +549,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                settings_tabs, 
                                                welcome_settings, 
                                                agent_settings, 
+                                               ollama_settings,
                                                document_settings, 
                                                console_settings, 
                                                agentic_flow])
@@ -1248,6 +1309,60 @@ def valid_input(query: str):
 
 """ This helper function executes and generates a response to the user query. """
 
+# Ollama functionality
+def _refresh_ollama_models(server, port):
+    try:
+        from chatui.utils.ollama import OllamaChatModel
+        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+        models = ollama_client.list_models()
+        
+        model_names = []
+        for model in models:
+            if 'name' in model:
+                model_names.append(model['name'])
+        
+        return gr.Dropdown.update(choices=model_names)
+    except Exception as e:
+        print(f"Error refreshing Ollama models: {e}")
+        return gr.Dropdown.update(choices=[])
+
+def _pull_ollama_model(server, port, model_name):
+    try:
+        from chatui.utils.ollama import OllamaChatModel
+        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+        success = ollama_client.pull_model(model_name)
+        
+        if success:
+            models_update = _refresh_ollama_models(server, port)
+            return "Model pulled successfully!", models_update
+        else:
+            return "Failed to pull model", gr.Dropdown.update()
+    except Exception as e:
+        print(f"Error pulling Ollama model: {e}")
+        return f"Error: {str(e)}", gr.Dropdown.update()
+
+def _update_ollama_state(use_ollama_val, server, port, model):
+    return use_ollama_val, server, port, model
+    
+# Connect Ollama UI components to functions
+use_ollama.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                 [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_server.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                    [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_port.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                  [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+ollama_model.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                   [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+
+refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
+available_models.change(lambda x: x, [available_models], [ollama_model])
+
+def _handle_pull_model(server, port, model_name):
+    status, models_update = _pull_ollama_model(server, port, model_name)
+    return status, models_update
+
+pull_model.click(_handle_pull_model, [ollama_server, ollama_port, ollama_model], [pull_status, available_models])
+
 def _stream_predict(
     client: chat_client.ChatClient,
     app, 
@@ -1282,6 +1397,10 @@ def _stream_predict(
     nim_retrieval_id: str,
     nim_hallucination_id: str,
     nim_answer_id: str,
+    use_ollama: bool,
+    ollama_server: str,
+    ollama_port: str,
+    ollama_model: str,
     chat_history: List[Tuple[str, str]],
 ) -> Any:
 
@@ -1315,6 +1434,10 @@ def _stream_predict(
               "nim_retrieval_id": nim_retrieval_id,
               "nim_hallucination_id": nim_hallucination_id,
               "nim_answer_id": nim_answer_id,
+              "use_ollama": use_ollama,
+              "ollama_server": ollama_server,
+              "ollama_port": ollama_port,
+              "ollama_model": ollama_model,
               "answer_use_nim": answer_use_nim}
     
     if not valid_input(question):

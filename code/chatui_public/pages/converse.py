@@ -1217,10 +1217,11 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     if 'name' in model:
                         model_names.append(model['name'])
                 
-                return gr.Dropdown.update(choices=model_names)
+                # Use gr.update() instead of gr.Dropdown.update()
+                return gr.update(choices=model_names)
             except Exception as e:
                 print(f"Error refreshing Ollama models: {e}")
-                return gr.Dropdown.update(choices=[])
+                return gr.update(choices=[])
 
         def _pull_ollama_model(server, port, model_name):
             try:
@@ -1231,10 +1232,12 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     models_update = _refresh_ollama_models(server, port)
                     return "Model pulled successfully!", models_update
                 else:
-                    return "Failed to pull model", gr.Dropdown.update()
+                    # This is the line causing the error - replace it with:
+                    # Instead of gr.Dropdown.update(), use gr.update() for all component updates
+                    return "Failed to pull model", gr.update(choices=[])
             except Exception as e:
                 print(f"Error pulling Ollama model: {e}")
-                return f"Error: {str(e)}", gr.Dropdown.update()
+                return f"Error: {str(e)}", gr.update(choices=[])
 
         def _handle_pull_model(server, port, model_name):
             status, models_update = _pull_ollama_model(server, port, model_name)

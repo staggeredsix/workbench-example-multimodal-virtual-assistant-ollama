@@ -181,23 +181,22 @@ class OllamaChatModel(BaseChatModel):
 
     def list_models(self):
         """List all available models in the Ollama server."""
-        # Ensure ollama_server starts with http:// or https://
+        # Ensure server has http:// prefix
         server = self.ollama_server
         if not (server.startswith('http://') or server.startswith('https://')):
             server = f"http://{server}"
-            
+        
         url = f"{server}:{self.ollama_port}/api/tags"
+        print(f"Initialized OllamaChatModel with server: {server}, port: {self.ollama_port}, model: {self.model_name}")
         print(f"Listing models from: {url}")
+        print(f"Sending GET request to {url}")
+        
         try:
-            print(f"Sending GET request to {url}")
             response = requests.get(url)
-            print(f"Response status code: {response.status_code}")
             response.raise_for_status()
-            resp_json = response.json()
-            print(f"Models response: {str(resp_json)[:100]}...")
-            return resp_json.get("models", [])
-        except Exception as e:
-            print(f"Error in list_models: {str(e)}")
+            return response.json().get("models", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error in list_models: {e}")
             return []
             
     def pull_model(self, model_name):
@@ -1251,10 +1250,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     if 'name' in model:
                         model_names.append(model['name'])
                 
-                return gr.Dropdown.update(choices=model_names)
+                return gr.update(choices=model_names)
             except Exception as e:
                 print(f"Error refreshing Ollama models: {e}")
-                return gr.Dropdown.update(choices=[])
+                return gr.update(choices=[])
 
         def _pull_ollama_model(server, port, model_name):
             try:

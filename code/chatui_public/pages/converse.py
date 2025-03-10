@@ -118,18 +118,26 @@ class OllamaChatModel(BaseChatModel):
         self.ollama_port = ollama_port
         self.model_name = model_name
         self.temperature = temperature
+        print(f"Initialized OllamaChatModel with server: {ollama_server}, port: {ollama_port}, model: {model_name}")
 
     @property
     def _llm_type(self) -> str:
         return 'ollama'
         
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        print(f"_generate called with messages: {messages[:100]}...")
         response = self._call_ollama_api(messages)
         return self._create_chat_result(response)
     
     def _call_ollama_api(self, messages, **kwargs):
         """Call the Ollama API to generate text."""
-        base_url = f"{self.ollama_server}:{self.ollama_port}/api/chat"
+        # Ensure ollama_server starts with http:// or https://
+        server = self.ollama_server
+        if not (server.startswith('http://') or server.startswith('https://')):
+            server = f"http://{server}"
+            
+        base_url = f"{server}:{self.ollama_port}/api/chat"
+        print(f"Calling Ollama API at: {base_url}")
         
         # Convert LangChain messages to Ollama format
         obj = json.loads(dumps(messages))
@@ -143,51 +151,77 @@ class OllamaChatModel(BaseChatModel):
                 "temperature": self.temperature
             }
         }
+        print(f"Payload: {json.dumps(payload)[:100]}...")
         
         try:
+            print(f"Sending POST request to {base_url}")
             response = requests.post(base_url, json=payload)
+            print(f"Response status code: {response.status_code}")
             response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error calling Ollama API: {e}")
-            return {"message": {"content": f"Error: Could not connect to Ollama server at {self.ollama_server}:{self.ollama_port}"}}
+            resp_json = response.json()
+            print(f"Response JSON: {str(resp_json)[:100]}...")
+            return resp_json
+        except Exception as e:
+            print(f"Error in _call_ollama_api: {str(e)}")
+            return {"message": {"content": f"Error: Could not connect to Ollama server at {server}:{self.ollama_port}. Error: {str(e)}"}}
     
     def _create_chat_result(self, response):
         """Create a ChatResult from the Ollama response."""
         try:
             content = response.get("message", {}).get("content", "No response from model")
+            print(f"Creating chat result with content: {content[:100]}...")
             message = ChatMessage(content=content, role="assistant")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
         except Exception as e:
-            print(f"Error creating chat result: {e}")
+            print(f"Error in _create_chat_result: {str(e)}")
             message = ChatMessage(content=f"Error processing model response: {str(e)}", role="assistant")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
 
     def list_models(self):
         """List all available models in the Ollama server."""
-        url = f"{self.ollama_server}:{self.ollama_port}/api/tags"
+        # Ensure ollama_server starts with http:// or https://
+        server = self.ollama_server
+        if not (server.startswith('http://') or server.startswith('https://')):
+            server = f"http://{server}"
+            
+        url = f"{server}:{self.ollama_port}/api/tags"
+        print(f"Listing models from: {url}")
         try:
+            print(f"Sending GET request to {url}")
             response = requests.get(url)
+            print(f"Response status code: {response.status_code}")
             response.raise_for_status()
-            return response.json().get("models", [])
-        except requests.exceptions.RequestException as e:
-            print(f"Error listing Ollama models: {e}")
+            resp_json = response.json()
+            print(f"Models response: {str(resp_json)[:100]}...")
+            return resp_json.get("models", [])
+        except Exception as e:
+            print(f"Error in list_models: {str(e)}")
             return []
             
     def pull_model(self, model_name):
         """Pull a model from the Ollama library if not already installed."""
-        url = f"{self.ollama_server}:{self.ollama_port}/api/pull"
+        # Ensure ollama_server starts with http:// or https://
+        server = self.ollama_server
+        if not (server.startswith('http://') or server.startswith('https://')):
+            server = f"http://{server}"
+            
+        url = f"{server}:{self.ollama_port}/api/pull"
+        print(f"Pulling model from: {url}")
         payload = {
             "name": model_name
         }
+        print(f"Pull payload: {json.dumps(payload)}")
         try:
+            print(f"Sending POST request to {url}")
             response = requests.post(url, json=payload, stream=True)
+            print(f"Response status code: {response.status_code}")
             response.raise_for_status()
+            print("Model pulled successfully")
             return True
-        except requests.exceptions.RequestException as e:
-            print(f"Error pulling Ollama model {model_name}: {e}")
+        except Exception as e:
+            print(f"Error in pull_model: {str(e)}")
             return False
 
 def build_page(client: chat_client.ChatClient) -> gr.Blocks:
@@ -1217,11 +1251,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     if 'name' in model:
                         model_names.append(model['name'])
                 
-                # Use gr.update() instead of gr.Dropdown.update()
-                return gr.update(choices=model_names)
+                return gr.Dropdown.update(choices=model_names)
             except Exception as e:
                 print(f"Error refreshing Ollama models: {e}")
-                return gr.update(choices=[])
+                return gr.Dropdown.update(choices=[])
 
         def _pull_ollama_model(server, port, model_name):
             try:
@@ -1232,12 +1265,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     models_update = _refresh_ollama_models(server, port)
                     return "Model pulled successfully!", models_update
                 else:
-                    # This is the line causing the error - replace it with:
-                    # Instead of gr.Dropdown.update(), use gr.update() for all component updates
-                    return "Failed to pull model", gr.update(choices=[])
+                    return "Failed to pull model", gr.Dropdown.update()
             except Exception as e:
                 print(f"Error pulling Ollama model: {e}")
-                return f"Error: {str(e)}", gr.update(choices=[])
+                return f"Error: {str(e)}", gr.Dropdown.update()
 
         def _handle_pull_model(server, port, model_name):
             status, models_update = _pull_ollama_model(server, port, model_name)

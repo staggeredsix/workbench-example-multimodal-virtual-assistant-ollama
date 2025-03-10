@@ -1,0 +1,34 @@
+http://localhost:8000
+Running on local URL:  http://0.0.0.0:8081
+
+To create a public link, set `share=True` in `launch()`.
+Error pulling Ollama model deepseek-r1-7b: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/pull (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe66c574d30>: Failed to establish a new connection: [Errno 111] Connection refused'))
+Error pulling Ollama model: type object 'Dropdown' has no attribute 'update'
+Error listing Ollama models: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/tags (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe66c5757e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+Error refreshing Ollama models: type object 'Dropdown' has no attribute 'update'
+Error pulling Ollama model deepseek-r1-7b: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/pull (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe66c5778b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+Error pulling Ollama model: type object 'Dropdown' has no attribute 'update'
+---ROUTE QUESTION---
+test
+---ROUTE QUESTION---
+test
+---ROUTE QUESTION---
+test
+Error listing Ollama models: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/tags (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe66da2acb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+Error refreshing Ollama models: type object 'Dropdown' has no attribute 'update'
+Error pulling Ollama model deepseek-r1:7b: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/pull (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe66da2a530>: Failed to establish a new connection: [Errno 111] Connection refused'))
+Error pulling Ollama model: type object 'Dropdown' has no attribute 'update'
+---ROUTE QUESTION---
+test
+{'datasource': 'web_search'}
+---ROUTE QUESTION TO WEB SEARCH---
+---WEB SEARCH---
+---GENERATE---
+---CHECK HALLUCINATIONS---
+---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---
+---GRADE GENERATION vs QUESTION---
+---DECISION: GENERATION ADDRESSES QUESTION---
+---ROUTE QUESTION---
+test
+---ROUTE QUESTION---
+test

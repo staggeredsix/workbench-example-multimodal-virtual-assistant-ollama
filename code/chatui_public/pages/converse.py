@@ -27,8 +27,7 @@ import sys
 
 from chatui import assets, chat_client
 from chatui.prompts import prompts_llama3, prompts_mistral, defaults
-from chatui.utils import compile, database, logger, ollama
-
+from chatui.utils import compile, database, logger, nim
 
 from langgraph.graph import END, StateGraph
 
@@ -94,6 +93,102 @@ _LOCAL_CSS = """
 """
 
 sys.stdout = logger.Logger("/project/code/output.log")
+
+# Helper class for Ollama integration
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.load.dump import dumps
+from langchain_core.messages import ChatMessage
+from langchain_core.outputs import ChatResult, ChatGeneration
+from pydantic import Field
+import requests
+import json
+import logging
+
+class OllamaChatModel(BaseChatModel):
+    """A LangChain chat model for Ollama API."""
+
+    ollama_server: str = Field("http://localhost", description='URL of the Ollama server')
+    ollama_port: str = Field("11434", description='Port of the Ollama server')
+    model_name: str = Field("llama3", description='Name of the Ollama model to use')
+    temperature: float = Field(0.7, description='Temperature for text generation')
+    
+    def __init__(self, ollama_server="http://localhost", ollama_port="11434", model_name="llama3", temperature=0.7, **kwargs):
+        super().__init__(**kwargs)
+        self.ollama_server = ollama_server
+        self.ollama_port = ollama_port
+        self.model_name = model_name
+        self.temperature = temperature
+
+    @property
+    def _llm_type(self) -> str:
+        return 'ollama'
+        
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        response = self._call_ollama_api(messages)
+        return self._create_chat_result(response)
+    
+    def _call_ollama_api(self, messages, **kwargs):
+        """Call the Ollama API to generate text."""
+        base_url = f"{self.ollama_server}:{self.ollama_port}/api/chat"
+        
+        # Convert LangChain messages to Ollama format
+        obj = json.loads(dumps(messages))
+        prompt_content = obj[0]["kwargs"]["content"]
+        
+        # Format for Ollama chat API
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt_content}],
+            "options": {
+                "temperature": self.temperature
+            }
+        }
+        
+        try:
+            response = requests.post(base_url, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling Ollama API: {e}")
+            return {"message": {"content": f"Error: Could not connect to Ollama server at {self.ollama_server}:{self.ollama_port}"}}
+    
+    def _create_chat_result(self, response):
+        """Create a ChatResult from the Ollama response."""
+        try:
+            content = response.get("message", {}).get("content", "No response from model")
+            message = ChatMessage(content=content, role="assistant")
+            generation = ChatGeneration(message=message)
+            return ChatResult(generations=[generation])
+        except Exception as e:
+            print(f"Error creating chat result: {e}")
+            message = ChatMessage(content=f"Error processing model response: {str(e)}", role="assistant")
+            generation = ChatGeneration(message=message)
+            return ChatResult(generations=[generation])
+
+    def list_models(self):
+        """List all available models in the Ollama server."""
+        url = f"{self.ollama_server}:{self.ollama_port}/api/tags"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json().get("models", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error listing Ollama models: {e}")
+            return []
+            
+    def pull_model(self, model_name):
+        """Pull a model from the Ollama library if not already installed."""
+        url = f"{self.ollama_server}:{self.ollama_port}/api/pull"
+        payload = {
+            "name": model_name
+        }
+        try:
+            response = requests.post(url, json=payload, stream=True)
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Error pulling Ollama model {model_name}: {e}")
+            return False
 
 def build_page(client: chat_client.ChatClient) -> gr.Blocks:
     """
@@ -384,7 +479,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                                   show_label=False,
                                                                   interactive=True)
                         
-                    # Second tab item is for uploading to and clearing the vector database
                     # Ollama Configuration Tab
                     with gr.TabItem("Ollama", id=3, interactive=False, visible=False) as ollama_settings:
                         gr.Markdown("## Ollama Configuration")
@@ -439,6 +533,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 interactive=False
                             )
 
+                    # Second tab item is for uploading to and clearing the vector database
                     with gr.TabItem("Database", id=2, interactive=False, visible=False) as document_settings:
                         gr.Markdown("")
                         gr.Markdown("Upload webpages, pdfs, images, and videos to the vector store.<br />**Note:** Clearing docs will empty the database!\n")
@@ -491,7 +586,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                 file_upload_clear = gr.Button(value="Clear Docs")
     
                     # Third tab item is for the actions output console. 
-                    with gr.TabItem("Monitor", id=3, interactive=False, visible=False) as console_settings:
+                    with gr.TabItem("Monitor", id=4, interactive=False, visible=False) as console_settings:
                         gr.Markdown("")
                         gr.Markdown("Monitor pipeline actions and view the trace of the latest response.\n")
                         with gr.Tabs(selected=0) as console_tabs:
@@ -505,8 +600,8 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                     elem_id="contextbox",
                                 )
                     
-                    # Third tab item is for collapsing the entire settings pane for readability. 
-                    with gr.TabItem("Hide All Settings", id=4, interactive=True, visible=True) as hide_all_settings:
+                    # Fourth tab item is for collapsing the entire settings pane for readability. 
+                    with gr.TabItem("Hide All Settings", id=5, interactive=True, visible=True) as hide_all_settings:
                         gr.Markdown("")
 
         page.load(logger.read_logs, None, logs, every=1)
@@ -542,7 +637,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
 
         initialize.click(_toggle_welcome, [], [initialized, 
                                                msg, 
-                                               sample_query_1, 
+                                               sample_query_1,
                                                sample_query_2, 
                                                sample_query_3, 
                                                sample_query_4, 
@@ -709,8 +804,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                       generator_btn,
                                                       hallucination_btn,
                                                       answer_btn])
-
-        """ This helper function ensures only one component model settings are expanded at a time when selected. """
+        #"" This helper function ensures only one component model settings are expanded at a time when selected. ""
 
         def _toggle_model(btn: str):
             if btn == "Router":
@@ -753,15 +847,15 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                        answer_btn])
         
         retrieval_btn.click(_toggle_model, [retrieval_btn], [group_router,
-                                                                           group_retrieval,
-                                                                           group_generator,
-                                                                           group_hallucination,
-                                                                           group_answer,
-                                                                           router_btn,
-                                                                           retrieval_btn,
-                                                                           generator_btn,
-                                                                           hallucination_btn,
-                                                                           answer_btn])
+                                                             group_retrieval,
+                                                             group_generator,
+                                                             group_hallucination,
+                                                             group_answer,
+                                                             router_btn,
+                                                             retrieval_btn,
+                                                             generator_btn,
+                                                             hallucination_btn,
+                                                             answer_btn])
         
         generator_btn.click(_toggle_model, [generator_btn], [group_router,
                                                              group_retrieval,
@@ -775,26 +869,26 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                              answer_btn])
         
         hallucination_btn.click(_toggle_model, [hallucination_btn], [group_router,
-                                                                                   group_retrieval,
-                                                                                   group_generator,
-                                                                                   group_hallucination,
-                                                                                   group_answer,
-                                                                                   router_btn,
-                                                                                   retrieval_btn,
-                                                                                   generator_btn,
-                                                                                   hallucination_btn,
-                                                                                   answer_btn])
+                                                                      group_retrieval,
+                                                                      group_generator,
+                                                                      group_hallucination,
+                                                                      group_answer,
+                                                                      router_btn,
+                                                                      retrieval_btn,
+                                                                      generator_btn,
+                                                                      hallucination_btn,
+                                                                      answer_btn])
         
         answer_btn.click(_toggle_model, [answer_btn], [group_router,
-                                                                     group_retrieval,
-                                                                     group_generator,
-                                                                     group_hallucination,
-                                                                     group_answer,
-                                                                     router_btn,
-                                                                     retrieval_btn,
-                                                                     generator_btn,
-                                                                     hallucination_btn,
-                                                                     answer_btn])
+                                                       group_retrieval,
+                                                       group_generator,
+                                                       group_hallucination,
+                                                       group_answer,
+                                                       router_btn,
+                                                       retrieval_btn,
+                                                       generator_btn,
+                                                       hallucination_btn,
+                                                       answer_btn])
 
         """ This helper function tracks which webpage is currently open for user upload. """
         
@@ -863,7 +957,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                                 pdf_upload_btn,
                                                                 image_upload_btn,
                                                                 video_upload_btn])
-
         """ These helper functions track the API Endpoint selected and regenerates the prompt accordingly. """
         
         def _toggle_model_router(selected_model: str):
@@ -985,7 +1078,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                     url_videos_upload, 
                                                     url_videos_clear, 
                                                     agentic_flow])
-        
         def _upload_video_url(videos, progress=gr.Progress()):
             progress(0.2, desc="Initializing Task")
             time.sleep(0.75)
@@ -1014,10 +1106,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             }
 
         url_videos_upload.click(_upload_video_url, [url_videos], [url_docs_clear, 
-                                                                                file_upload_clear, 
-                                                                                url_videos_upload, 
-                                                                                url_videos_clear, 
-                                                                                agentic_flow])
+                                                                file_upload_clear, 
+                                                                url_videos_upload, 
+                                                                url_videos_clear, 
+                                                                agentic_flow])
         url_videos_clear.click(_clear_documents, [], [url_docs_upload, 
                                                       url_docs_clear, 
                                                       pdf_docs_upload, 
@@ -1049,11 +1141,8 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                 agentic_flow: gr.update(visible=True),
             }
 
-        pdf_docs_upload.upload(_upload_pdf_documents, [pdf_docs_upload], [url_docs_clear, 
-                                                                          file_upload_clear, 
-                                                                          url_videos_clear, 
-                                                                          agentic_flow])
-        
+        pdf_docs_upload.upload(_upload_pdf_documents, [pdf_docs_upload], [url_docs_clear, file_upload_clear, url_videos_clear, agentic_flow])
+
         def _upload_image_documents(files, progress=gr.Progress()):
             progress(0.25, desc="Initializing Task")
             time.sleep(0.75)
@@ -1078,9 +1167,9 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             }
 
         image_upload.upload(_upload_image_documents, [image_upload], [url_docs_clear, 
-                                                                          file_upload_clear, 
-                                                                          url_videos_clear, 
-                                                                          agentic_flow])
+                                                                      file_upload_clear, 
+                                                                      url_videos_clear, 
+                                                                      agentic_flow])
 
         def _upload_video_documents(files, progress=gr.Progress()):
             progress(0.25, desc="Initializing Task")
@@ -1106,9 +1195,9 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             }
 
         video_upload.upload(_upload_video_documents, [video_upload], [url_docs_clear, 
-                                                                          file_upload_clear, 
-                                                                          url_videos_clear, 
-                                                                          agentic_flow])
+                                                                      file_upload_clear, 
+                                                                      url_videos_clear, 
+                                                                      agentic_flow])
 
         file_upload_clear.click(_clear_documents, [], [url_docs_upload, 
                                                     url_docs_clear, 
@@ -1117,339 +1206,352 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                                                     url_videos_upload, 
                                                     url_videos_clear, 
                                                     agentic_flow])
+        # Ollama related functions
+        def _refresh_ollama_models(server, port):
+            try:
+                ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+                models = ollama_client.list_models()
+                
+                model_names = []
+                for model in models:
+                    if 'name' in model:
+                        model_names.append(model['name'])
+                
+                return gr.Dropdown.update(choices=model_names)
+            except Exception as e:
+                print(f"Error refreshing Ollama models: {e}")
+                return gr.Dropdown.update(choices=[])
 
-        """ This helper function builds out the submission function call when a user submits a query. """
+        def _pull_ollama_model(server, port, model_name):
+            try:
+                ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
+                success = ollama_client.pull_model(model_name)
+                
+                if success:
+                    models_update = _refresh_ollama_models(server, port)
+                    return "Model pulled successfully!", models_update
+                else:
+                    return "Failed to pull model", gr.Dropdown.update()
+            except Exception as e:
+                print(f"Error pulling Ollama model: {e}")
+                return f"Error: {str(e)}", gr.Dropdown.update()
+
+        def _handle_pull_model(server, port, model_name):
+            status, models_update = _pull_ollama_model(server, port, model_name)
+            return status, models_update
+            
+        def _update_ollama_state(use_ollama_val, server, port, model):
+            return use_ollama_val, server, port, model
         
-        _my_build_stream = functools.partial(_stream_predict, client, app)
+        # Connect Ollama UI components to functions
+        use_ollama.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                         [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_server.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                            [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_port.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                          [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_model.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                           [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+
+        refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
+        available_models.change(lambda x: x, [available_models], [ollama_model])
+        pull_model.click(_handle_pull_model, [ollama_server, ollama_port, ollama_model], [pull_status, available_models])
+
+        """ This helper function verifies that a user query is nonempty. """
+
+        def valid_input(query: str):
+            return False if query.isspace() or query is None or query == "" or query == '' else True
+
+        """ This helper function executes and generates a response to the user query. """
+
+        def _stream_predict(
+            client: chat_client.ChatClient,
+            app, 
+            question: str,
+            model_generator: str,
+            model_router: str,
+            model_retrieval: str,
+            model_hallucination: str,
+            model_answer: str,
+            prompt_generator: str,
+            prompt_router: str,
+            prompt_retrieval: str,
+            prompt_hallucination: str,
+            prompt_answer: str,
+            router_use_nim: bool,
+            retrieval_use_nim: bool,
+            generator_use_nim: bool,
+            hallucination_use_nim: bool,
+            answer_use_nim: bool,
+            nim_generator_ip: str,
+            nim_router_ip: str,
+            nim_retrieval_ip: str,
+            nim_hallucination_ip: str,
+            nim_answer_ip: str,
+            nim_generator_port: str,
+            nim_router_port: str,
+            nim_retrieval_port: str,
+            nim_hallucination_port: str,
+            nim_answer_port: str,
+            nim_generator_id: str,
+            nim_router_id: str,
+            nim_retrieval_id: str,
+            nim_hallucination_id: str,
+            nim_answer_id: str,
+            use_ollama: bool,
+            ollama_server: str,
+            ollama_port: str,
+            ollama_model: str,
+            chat_history: List[Tuple[str, str]],
+        ) -> Any:
+
+            inputs = {"question": question, 
+                      "generator_model_id": model_generator, 
+                      "router_model_id": model_router, 
+                      "retrieval_model_id": model_retrieval, 
+                      "hallucination_model_id": model_hallucination, 
+                      "answer_model_id": model_answer, 
+                      "prompt_generator": prompt_generator, 
+                      "prompt_router": prompt_router, 
+                      "prompt_retrieval": prompt_retrieval, 
+                      "prompt_hallucination": prompt_hallucination, 
+                      "prompt_answer": prompt_answer, 
+                      "router_use_nim": router_use_nim, 
+                      "retrieval_use_nim": retrieval_use_nim, 
+                      "generator_use_nim": generator_use_nim, 
+                      "hallucination_use_nim": hallucination_use_nim, 
+                      "nim_generator_ip": nim_generator_ip,
+                      "nim_router_ip": nim_router_ip,
+                      "nim_retrieval_ip": nim_retrieval_ip,
+                      "nim_hallucination_ip": nim_hallucination_ip,
+                      "nim_answer_ip": nim_answer_ip,
+                      "nim_generator_port": nim_generator_port,
+                      "nim_router_port": nim_router_port,
+                      "nim_retrieval_port": nim_retrieval_port,
+                      "nim_hallucination_port": nim_hallucination_port,
+                      "nim_answer_port": nim_answer_port,
+                      "nim_generator_id": nim_generator_id,
+                      "nim_router_id": nim_router_id,
+                      "nim_retrieval_id": nim_retrieval_id,
+                      "nim_hallucination_id": nim_hallucination_id,
+                      "nim_answer_id": nim_answer_id,
+                      "use_ollama": use_ollama,
+                      "ollama_server": ollama_server,
+                      "ollama_port": ollama_port,
+                      "ollama_model": ollama_model,
+                      "answer_use_nim": answer_use_nim}
+            
+            if not valid_input(question):
+                yield "", chat_history + [[str(question), "*** ERR: Unable to process query. Query cannot be empty. ***"]], gr.update(show_label=False)
+            else: 
+                try:
+                    actions = {}
+                    for output in app.stream(inputs):
+                        actions.update(output)
+                        yield "", chat_history + [[question, "Working on getting you the best answer..."]], gr.update(value=actions)
+                        for key, value in output.items():
+                            final_value = value
+                    yield "", chat_history + [[question, final_value["generation"]]], gr.update(show_label=False)
+                except Exception as e: 
+                    yield "", chat_history + [[question, "*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: " + str(e)]], gr.update(show_label=False)
 
         # Submit a sample query
+        _my_build_stream = functools.partial(_stream_predict, client, app)
+
         sample_query_1.click(
             _my_build_stream, [sample_query_1, 
-                               model_generator,
-                               model_router,
-                               model_retrieval,
-                               model_hallucination,
-                               model_answer,
-                               prompt_generator,
-                               prompt_router,
-                               prompt_retrieval,
-                               prompt_hallucination,
-                               prompt_answer,
-                               router_use_nim,
-                               retrieval_use_nim,
-                               generator_use_nim,
-                               hallucination_use_nim,
-                               answer_use_nim,
-                               nim_generator_ip,
-                               nim_router_ip,
-                               nim_retrieval_ip,
-                               nim_hallucination_ip,
-                               nim_answer_ip,
-                               nim_generator_port,
-                               nim_router_port,
-                               nim_retrieval_port,
-                               nim_hallucination_port,
-                               nim_answer_port,
-                               nim_generator_id,
-                               nim_router_id,
-                               nim_retrieval_id,
-                               nim_hallucination_id,
-                               nim_answer_id,
-                               chatbot], [msg, chatbot, actions]
+                            model_generator,
+                            model_router,
+                            model_retrieval,
+                            model_hallucination,
+                            model_answer,
+                            prompt_generator,
+                            prompt_router,
+                            prompt_retrieval,
+                            prompt_hallucination,
+                            prompt_answer,
+                            router_use_nim,
+                            retrieval_use_nim,
+                            generator_use_nim,
+                            hallucination_use_nim,
+                            answer_use_nim,
+                            nim_generator_ip,
+                            nim_router_ip,
+                            nim_retrieval_ip,
+                            nim_hallucination_ip,
+                            nim_answer_ip,
+                            nim_generator_port,
+                            nim_router_port,
+                            nim_retrieval_port,
+                            nim_hallucination_port,
+                            nim_answer_port,
+                            nim_generator_id,
+                            nim_router_id,
+                            nim_retrieval_id,
+                            nim_hallucination_id,
+                            nim_answer_id,
+                            use_ollama_state,
+                            ollama_server_state,
+                            ollama_port_state,
+                            ollama_model_state,
+                            chatbot], [msg, chatbot, actions]
         )
 
         sample_query_2.click(
             _my_build_stream, [sample_query_2, 
-                               model_generator,
-                               model_router,
-                               model_retrieval,
-                               model_hallucination,
-                               model_answer,
-                               prompt_generator,
-                               prompt_router,
-                               prompt_retrieval,
-                               prompt_hallucination,
-                               prompt_answer,
-                               router_use_nim,
-                               retrieval_use_nim,
-                               generator_use_nim,
-                               hallucination_use_nim,
-                               answer_use_nim,
-                               nim_generator_ip,
-                               nim_router_ip,
-                               nim_retrieval_ip,
-                               nim_hallucination_ip,
-                               nim_answer_ip,
-                               nim_generator_port,
-                               nim_router_port,
-                               nim_retrieval_port,
-                               nim_hallucination_port,
-                               nim_answer_port,
-                               nim_generator_id,
-                               nim_router_id,
-                               nim_retrieval_id,
-                               nim_hallucination_id,
-                               nim_answer_id,
-                               chatbot], [msg, chatbot, actions]
+                            model_generator,
+                            model_router,
+                            model_retrieval,
+                            model_hallucination,
+                            model_answer,
+                            prompt_generator,
+                            prompt_router,
+                            prompt_retrieval,
+                            prompt_hallucination,
+                            prompt_answer,
+                            router_use_nim,
+                            retrieval_use_nim,
+                            generator_use_nim,
+                            hallucination_use_nim,
+                            answer_use_nim,
+                            nim_generator_ip,
+                            nim_router_ip,
+                            nim_retrieval_ip,
+                            nim_hallucination_ip,
+                            nim_answer_ip,
+                            nim_generator_port,
+                            nim_router_port,
+                            nim_retrieval_port,
+                            nim_hallucination_port,
+                            nim_answer_port,
+                            nim_generator_id,
+                            nim_router_id,
+                            nim_retrieval_id,
+                            nim_hallucination_id,
+                            nim_answer_id,
+                            use_ollama_state,
+                            ollama_server_state,
+                            ollama_port_state,
+                            ollama_model_state,
+                            chatbot], [msg, chatbot, actions]
         )
 
         sample_query_3.click(
             _my_build_stream, [sample_query_3, 
-                               model_generator,
-                               model_router,
-                               model_retrieval,
-                               model_hallucination,
-                               model_answer,
-                               prompt_generator,
-                               prompt_router,
-                               prompt_retrieval,
-                               prompt_hallucination,
-                               prompt_answer,
-                               router_use_nim,
-                               retrieval_use_nim,
-                               generator_use_nim,
-                               hallucination_use_nim,
-                               answer_use_nim,
-                               nim_generator_ip,
-                               nim_router_ip,
-                               nim_retrieval_ip,
-                               nim_hallucination_ip,
-                               nim_answer_ip,
-                               nim_generator_port,
-                               nim_router_port,
-                               nim_retrieval_port,
-                               nim_hallucination_port,
-                               nim_answer_port,
-                               nim_generator_id,
-                               nim_router_id,
-                               nim_retrieval_id,
-                               nim_hallucination_id,
-                               nim_answer_id,
-                               chatbot], [msg, chatbot, actions]
+                            model_generator,
+                            model_router,
+                            model_retrieval,
+                            model_hallucination,
+                            model_answer,
+                            prompt_generator,
+                            prompt_router,
+                            prompt_retrieval,
+                            prompt_hallucination,
+                            prompt_answer,
+                            router_use_nim,
+                            retrieval_use_nim,
+                            generator_use_nim,
+                            hallucination_use_nim,
+                            answer_use_nim,
+                            nim_generator_ip,
+                            nim_router_ip,
+                            nim_retrieval_ip,
+                            nim_hallucination_ip,
+                            nim_answer_ip,
+                            nim_generator_port,
+                            nim_router_port,
+                            nim_retrieval_port,
+                            nim_hallucination_port,
+                            nim_answer_port,
+                            nim_generator_id,
+                            nim_router_id,
+                            nim_retrieval_id,
+                            nim_hallucination_id,
+                            nim_answer_id,
+                            use_ollama_state,
+                            ollama_server_state,
+                            ollama_port_state,
+                            ollama_model_state,
+                            chatbot], [msg, chatbot, actions]
         )
 
         sample_query_4.click(
             _my_build_stream, [sample_query_4, 
-                               model_generator,
-                               model_router,
-                               model_retrieval,
-                               model_hallucination,
-                               model_answer,
-                               prompt_generator,
-                               prompt_router,
-                               prompt_retrieval,
-                               prompt_hallucination,
-                               prompt_answer,
-                               router_use_nim,
-                               retrieval_use_nim,
-                               generator_use_nim,
-                               hallucination_use_nim,
-                               answer_use_nim,
-                               nim_generator_ip,
-                               nim_router_ip,
-                               nim_retrieval_ip,
-                               nim_hallucination_ip,
-                               nim_answer_ip,
-                               nim_generator_port,
-                               nim_router_port,
-                               nim_retrieval_port,
-                               nim_hallucination_port,
-                               nim_answer_port,
-                               nim_generator_id,
-                               nim_router_id,
-                               nim_retrieval_id,
-                               nim_hallucination_id,
-                               nim_answer_id,
-                               chatbot], [msg, chatbot, actions]
+                            model_generator,
+                            model_router,
+                            model_retrieval,
+                            model_hallucination,
+                            model_answer,
+                            prompt_generator,
+                            prompt_router,
+                            prompt_retrieval,
+                            prompt_hallucination,
+                            prompt_answer,
+                            router_use_nim,
+                            retrieval_use_nim,
+                            generator_use_nim,
+                            hallucination_use_nim,
+                            answer_use_nim,
+                            nim_generator_ip,
+                            nim_router_ip,
+                            nim_retrieval_ip,
+                            nim_hallucination_ip,
+                            nim_answer_ip,
+                            nim_generator_port,
+                            nim_router_port,
+                            nim_retrieval_port,
+                            nim_hallucination_port,
+                            nim_answer_port,
+                            nim_generator_id,
+                            nim_router_id,
+                            nim_retrieval_id,
+                            nim_hallucination_id,
+                            nim_answer_id,
+                            use_ollama_state,
+                            ollama_server_state,
+                            ollama_port_state,
+                            ollama_model_state,
+                            chatbot], [msg, chatbot, actions]
         )
 
-        # Submit a custom query
         msg.submit(
             _my_build_stream, [msg, 
-                               model_generator,
-                               model_router,
-                               model_retrieval,
-                               model_hallucination,
-                               model_answer,
-                               prompt_generator,
-                               prompt_router,
-                               prompt_retrieval,
-                               prompt_hallucination,
-                               prompt_answer,
-                               router_use_nim,
-                               retrieval_use_nim,
-                               generator_use_nim,
-                               hallucination_use_nim,
-                               answer_use_nim,
-                               nim_generator_ip,
-                               nim_router_ip,
-                               nim_retrieval_ip,
-                               nim_hallucination_ip,
-                               nim_answer_ip,
-                               nim_generator_port,
-                               nim_router_port,
-                               nim_retrieval_port,
-                               nim_hallucination_port,
-                               nim_answer_port,
-                               nim_generator_id,
-                               nim_router_id,
-                               nim_retrieval_id,
-                               nim_hallucination_id,
-                               nim_answer_id,
-                               chatbot], [msg, chatbot, actions]
+                            model_generator,
+                            model_router,
+                            model_retrieval,
+                            model_hallucination,
+                            model_answer,
+                            prompt_generator,
+                            prompt_router,
+                            prompt_retrieval,
+                            prompt_hallucination,
+                            prompt_answer,
+                            router_use_nim,
+                            retrieval_use_nim,
+                            generator_use_nim,
+                            hallucination_use_nim,
+                            answer_use_nim,
+                            nim_generator_ip,
+                            nim_router_ip,
+                            nim_retrieval_ip,
+                            nim_hallucination_ip,
+                            nim_answer_ip,
+                            nim_generator_port,
+                            nim_router_port,
+                            nim_retrieval_port,
+                            nim_hallucination_port,
+                            nim_answer_port,
+                            nim_generator_id,
+                            nim_router_id,
+                            nim_retrieval_id,
+                            nim_hallucination_id,
+                            nim_answer_id,
+                            use_ollama_state,
+                            ollama_server_state,
+                            ollama_port_state,
+                            ollama_model_state,
+                            chatbot], [msg, chatbot, actions]
         )
 
-    page.queue()
-    return page
-
-""" This helper function verifies that a user query is nonempty. """
-
-def valid_input(query: str):
-    return False if query.isspace() or query is None or query == "" or query == '' else True
-
-""" This helper function executes and generates a response to the user query. """
-
-# Ollama functionality
-def _refresh_ollama_models(server, port):
-    try:
-        from chatui.utils.ollama import OllamaChatModel
-        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
-        models = ollama_client.list_models()
-        
-        model_names = []
-        for model in models:
-            if 'name' in model:
-                model_names.append(model['name'])
-        
-        return gr.Dropdown.update(choices=model_names)
-    except Exception as e:
-        print(f"Error refreshing Ollama models: {e}")
-        return gr.Dropdown.update(choices=[])
-
-def _pull_ollama_model(server, port, model_name):
-    try:
-        from chatui.utils.ollama import OllamaChatModel
-        ollama_client = OllamaChatModel(ollama_server=server, ollama_port=port)
-        success = ollama_client.pull_model(model_name)
-        
-        if success:
-            models_update = _refresh_ollama_models(server, port)
-            return "Model pulled successfully!", models_update
-        else:
-            return "Failed to pull model", gr.Dropdown.update()
-    except Exception as e:
-        print(f"Error pulling Ollama model: {e}")
-        return f"Error: {str(e)}", gr.Dropdown.update()
-
-def _update_ollama_state(use_ollama_val, server, port, model):
-    return use_ollama_val, server, port, model
-    
-# Connect Ollama UI components to functions
-use_ollama.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
-                 [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
-ollama_server.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
-                    [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
-ollama_port.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
-                  [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
-ollama_model.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
-                   [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
-
-refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
-available_models.change(lambda x: x, [available_models], [ollama_model])
-
-def _handle_pull_model(server, port, model_name):
-    status, models_update = _pull_ollama_model(server, port, model_name)
-    return status, models_update
-
-pull_model.click(_handle_pull_model, [ollama_server, ollama_port, ollama_model], [pull_status, available_models])
-
-def _stream_predict(
-    client: chat_client.ChatClient,
-    app, 
-    question: str,
-    model_generator: str,
-    model_router: str,
-    model_retrieval: str,
-    model_hallucination: str,
-    model_answer: str,
-    prompt_generator: str,
-    prompt_router: str,
-    prompt_retrieval: str,
-    prompt_hallucination: str,
-    prompt_answer: str,
-    router_use_nim: bool,
-    retrieval_use_nim: bool,
-    generator_use_nim: bool,
-    hallucination_use_nim: bool,
-    answer_use_nim: bool,
-    nim_generator_ip: str,
-    nim_router_ip: str,
-    nim_retrieval_ip: str,
-    nim_hallucination_ip: str,
-    nim_answer_ip: str,
-    nim_generator_port: str,
-    nim_router_port: str,
-    nim_retrieval_port: str,
-    nim_hallucination_port: str,
-    nim_answer_port: str,
-    nim_generator_id: str,
-    nim_router_id: str,
-    nim_retrieval_id: str,
-    nim_hallucination_id: str,
-    nim_answer_id: str,
-    use_ollama: bool,
-    ollama_server: str,
-    ollama_port: str,
-    ollama_model: str,
-    chat_history: List[Tuple[str, str]],
-) -> Any:
-
-    inputs = {"question": question, 
-              "generator_model_id": model_generator, 
-              "router_model_id": model_router, 
-              "retrieval_model_id": model_retrieval, 
-              "hallucination_model_id": model_hallucination, 
-              "answer_model_id": model_answer, 
-              "prompt_generator": prompt_generator, 
-              "prompt_router": prompt_router, 
-              "prompt_retrieval": prompt_retrieval, 
-              "prompt_hallucination": prompt_hallucination, 
-              "prompt_answer": prompt_answer, 
-              "router_use_nim": router_use_nim, 
-              "retrieval_use_nim": retrieval_use_nim, 
-              "generator_use_nim": generator_use_nim, 
-              "hallucination_use_nim": hallucination_use_nim, 
-              "nim_generator_ip": nim_generator_ip,
-              "nim_router_ip": nim_router_ip,
-              "nim_retrieval_ip": nim_retrieval_ip,
-              "nim_hallucination_ip": nim_hallucination_ip,
-              "nim_answer_ip": nim_answer_ip,
-              "nim_generator_port": nim_generator_port,
-              "nim_router_port": nim_router_port,
-              "nim_retrieval_port": nim_retrieval_port,
-              "nim_hallucination_port": nim_hallucination_port,
-              "nim_answer_port": nim_answer_port,
-              "nim_generator_id": nim_generator_id,
-              "nim_router_id": nim_router_id,
-              "nim_retrieval_id": nim_retrieval_id,
-              "nim_hallucination_id": nim_hallucination_id,
-              "nim_answer_id": nim_answer_id,
-              "use_ollama": use_ollama,
-              "ollama_server": ollama_server,
-              "ollama_port": ollama_port,
-              "ollama_model": ollama_model,
-              "answer_use_nim": answer_use_nim}
-    
-    if not valid_input(question):
-        yield "", chat_history + [[str(question), "*** ERR: Unable to process query. Query cannot be empty. ***"]], gr.update(show_label=False)
-    else: 
-        try:
-            actions = {}
-            for output in app.stream(inputs):
-                actions.update(output)
-                yield "", chat_history + [[question, "Working on getting you the best answer..."]], gr.update(value=actions)
-                for key, value in output.items():
-                    final_value = value
-            yield "", chat_history + [[question, final_value["generation"]]], gr.update(show_label=False)
-        except Exception as e: 
-            yield "", chat_history + [[question, "*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: " + str(e)]], gr.update(show_label=False)
+        page.queue()
+        return page

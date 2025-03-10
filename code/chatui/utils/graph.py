@@ -18,12 +18,13 @@ import os
 from typing_extensions import TypedDict
 from typing import List
 
+from chatui import ollama
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_community.tools.tavily_search import TavilySearchResults
 
-from chatui.utils import database, nim, ollama
+from chatui.utils import database, nim
 
 ### State
 

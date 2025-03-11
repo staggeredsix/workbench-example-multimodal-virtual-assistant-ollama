@@ -134,3 +134,7 @@ execution:
     target: /project/
     description: Project directory
     options: rw
+  - type: volume
+    target: /nvwb-shared-volume/
+    description: ""
+    options: volumeName=nvwb-shared-volume

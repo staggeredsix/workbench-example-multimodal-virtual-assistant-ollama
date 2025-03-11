@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    networks:
+      - workbench
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://ollama:11434/"]
+      interval: 30s
+      retries: 3
+      start_period: 10s
+      timeout: 5s
+
+networks:
+  workbench:
+    external: false
+
+volumes:
+  ollama_data:
+    driver: local

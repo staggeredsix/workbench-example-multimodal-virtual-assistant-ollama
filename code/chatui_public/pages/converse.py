@@ -105,14 +105,14 @@ import json
 import logging
 
 class OllamaChatModel(BaseChatModel):
-    #"""A LangChain chat model for Ollama API with streaming support."""
+    """A LangChain chat model for Ollama API with streaming support."""
 
-    ollama_server: str = Field("http://ollama", description='URL of the Ollama server')
+    ollama_server: str = Field("http://localhost", description='URL of the Ollama server')
     ollama_port: str = Field("11434", description='Port of the Ollama server')
-    model_name: str = Field("deepseek-r1:7b", description='Name of the Ollama model to use')
+    model_name: str = Field("llama3", description='Name of the Ollama model to use')
     temperature: float = Field(0.7, description='Temperature for text generation')
     
-    def __init__(self, ollama_server="http://ollama", ollama_port="11434", model_name="deepseek-r1:7b", temperature=0.7, **kwargs):
+    def __init__(self, ollama_server="http://localhost", ollama_port="11434", model_name="llama3", temperature=0.7, **kwargs):
         super().__init__(**kwargs)
         self.ollama_server = ollama_server
         self.ollama_port = ollama_port
@@ -125,13 +125,13 @@ class OllamaChatModel(BaseChatModel):
         return 'ollama'
     
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        #"""Generate a chat response."""
+        """Generate a chat response."""
         print(f"Generating with messages: {str(messages)[:100]}...")
         response = self._call_ollama_api(messages)
         return self._create_chat_result(response)
     
     def _call_ollama_api(self, messages, **kwargs):
-        #"""Call the Ollama API to generate text with streaming support."""
+        """Call the Ollama API to generate text with streaming support."""
         # Ensure server URL has a protocol prefix
         server_url = self.ollama_server
         if not (server_url.startswith('http://') or server_url.startswith('https://')):
@@ -162,6 +162,8 @@ class OllamaChatModel(BaseChatModel):
             }
             
             print(f"Sending chat request to: {base_url}")
+            print(f"Model: {self.model_name}")
+            print(f"Payload: {json.dumps(payload)[:100]}...")
             
             # Make the API call
             response = requests.post(base_url, json=payload)
@@ -169,10 +171,15 @@ class OllamaChatModel(BaseChatModel):
             
             # Process the response
             response_text = response.text.strip()
+            print(f"Raw response text: {response_text[:200]}...")
             
+            # Defensive parsing with extensive logging
             try:
                 # Parse the JSON response
                 response_data = json.loads(response_text)
+                print(f"Response data type: {type(response_data)}")
+                if isinstance(response_data, dict):
+                    print(f"Response data keys: {list(response_data.keys())}")
                 return response_data
             except json.JSONDecodeError as e:
                 print(f"Error parsing JSON response: {e}")
@@ -187,30 +194,52 @@ class OllamaChatModel(BaseChatModel):
                     except json.JSONDecodeError:
                         print(f"Failed to parse first line as JSON: {first_line}")
                 
-                # Return a fallback response
-                return {"message": {"content": f"Error parsing Ollama response: {str(e)}"}}
+                # If we can't parse the JSON, just return the raw text
+                # This handles the case where Ollama might return plain text
+                return {"message": {"content": response_text}}
                 
         except Exception as e:
             print(f"Error in Ollama API call: {str(e)}")
+            print(f"Exception type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             return {"message": {"content": f"Error calling Ollama API: {str(e)}"}}
     
     def _create_chat_result(self, response):
-        #"""Create a chat result from the Ollama response."""
+        """Create a chat result from the Ollama response."""
         try:
             # Extract the content from the response
             content = None
             
             # Handle different response formats
             if isinstance(response, dict):
-                if "message" in response and isinstance(response["message"], dict) and "content" in response["message"]:
-                    content = response["message"]["content"]
+                if "message" in response:
+                    if isinstance(response["message"], dict) and "content" in response["message"]:
+                        content = response["message"]["content"]
+                    else:
+                        content = str(response["message"])
                 elif "response" in response:
                     content = response["response"]
                 elif "content" in response:
                     content = response["content"]
             
+            # If we couldn't extract content in any of the expected ways,
+            # just use the entire response as a string
             if content is None:
-                content = f"Could not extract content from response: {str(response)[:100]}..."
+                content = str(response)
+                print(f"Using fallback content extraction: {content[:100]}...")
+            
+            # Process content to remove <think> tags and their content
+            if content and isinstance(content, str):
+                # Log original content for debugging
+                print(f"Original content before removing think tags: {content[:100]}...")
+                
+                # Remove <think> tags and their content using regex
+                import re
+                content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+                
+                # Log processed content
+                print(f"Content after removing think tags: {content[:100]}...")
             
             # Create a proper LangChain message and result
             message = ChatMessage(content=content, role="assistant")
@@ -219,12 +248,14 @@ class OllamaChatModel(BaseChatModel):
             
         except Exception as e:
             print(f"Error creating chat result: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             message = ChatMessage(content=f"Error processing Ollama response: {str(e)}", role="assistant")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
     
     def list_models(self):
-        #"""List all available models in the Ollama server."""
+        """List all available models in the Ollama server."""
         # Ensure server URL has a protocol prefix
         server_url = self.ollama_server
         if not (server_url.startswith('http://') or server_url.startswith('https://')):
@@ -241,7 +272,7 @@ class OllamaChatModel(BaseChatModel):
             return []
     
     def pull_model(self, model_name):
-        #"""Pull a model from the Ollama library."""
+        """Pull a model from the Ollama library."""
         # Ensure server URL has a protocol prefix
         server_url = self.ollama_server
         if not (server_url.startswith('http://') or server_url.startswith('https://')):

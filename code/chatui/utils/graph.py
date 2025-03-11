@@ -134,6 +134,8 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
             from pydantic import Field
             import requests
             import json
+            import re
+            import traceback
             
             class OllamaChatModel(BaseChatModel):
                 """A LangChain chat model for Ollama API with streaming support."""
@@ -193,6 +195,8 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
                         }
                         
                         print(f"Sending chat request to: {base_url}")
+                        print(f"Model: {self.model_name}")
+                        print(f"Payload: {json.dumps(payload)[:100]}...")
                         
                         # Make the API call
                         response = requests.post(base_url, json=payload)
@@ -200,10 +204,15 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
                         
                         # Process the response
                         response_text = response.text.strip()
+                        print(f"Raw response text: {response_text[:200]}...")
                         
+                        # Defensive parsing with extensive logging
                         try:
                             # Parse the JSON response
                             response_data = json.loads(response_text)
+                            print(f"Response data type: {type(response_data)}")
+                            if isinstance(response_data, dict):
+                                print(f"Response data keys: {list(response_data.keys())}")
                             return response_data
                         except json.JSONDecodeError as e:
                             print(f"Error parsing JSON response: {e}")
@@ -218,11 +227,14 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
                                 except json.JSONDecodeError:
                                     print(f"Failed to parse first line as JSON: {first_line}")
                             
-                            # Return a fallback response
-                            return {"message": {"content": f"Error parsing Ollama response: {str(e)}"}}
+                            # If we can't parse the JSON, just return the raw text
+                            # This handles the case where Ollama might return plain text
+                            return {"message": {"content": response_text}}
                             
                     except Exception as e:
                         print(f"Error in Ollama API call: {str(e)}")
+                        print(f"Exception type: {type(e)}")
+                        print(f"Traceback: {traceback.format_exc()}")
                         return {"message": {"content": f"Error calling Ollama API: {str(e)}"}}
                 
                 def _create_chat_result(self, response):
@@ -233,15 +245,32 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
                         
                         # Handle different response formats
                         if isinstance(response, dict):
-                            if "message" in response and isinstance(response["message"], dict) and "content" in response["message"]:
-                                content = response["message"]["content"]
+                            if "message" in response:
+                                if isinstance(response["message"], dict) and "content" in response["message"]:
+                                    content = response["message"]["content"]
+                                else:
+                                    content = str(response["message"])
                             elif "response" in response:
                                 content = response["response"]
                             elif "content" in response:
                                 content = response["content"]
                         
+                        # If we couldn't extract content in any of the expected ways,
+                        # just use the entire response as a string
                         if content is None:
-                            content = f"Could not extract content from response: {str(response)[:100]}..."
+                            content = str(response)
+                            print(f"Using fallback content extraction: {content[:100]}...")
+                        
+                        # Process content to remove <think> tags and their content
+                        if content and isinstance(content, str):
+                            # Log original content for debugging
+                            print(f"Original content before removing think tags: {content[:100]}...")
+                            
+                            # Remove <think> tags and their content using regex
+                            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+                            
+                            # Log processed content
+                            print(f"Content after removing think tags: {content[:100]}...")
                         
                         # Create a proper LangChain message and result
                         message = ChatMessage(content=content, role="assistant")
@@ -250,6 +279,7 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
                         
                     except Exception as e:
                         print(f"Error creating chat result: {str(e)}")
+                        print(f"Traceback: {traceback.format_exc()}")
                         message = ChatMessage(content=f"Error processing Ollama response: {str(e)}", role="assistant")
                         generation = ChatGeneration(message=message)
                         return ChatResult(generations=[generation])
@@ -262,6 +292,7 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
             )
         except Exception as e:
             print(f"Error creating Ollama model: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
             # Fall back to NIM or NVIDIA API
             print("Falling back to default model")
             return ChatNVIDIA(model=state[model_key], temperature=0.7)

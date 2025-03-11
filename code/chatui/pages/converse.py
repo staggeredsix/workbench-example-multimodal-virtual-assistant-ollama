@@ -105,14 +105,14 @@ import json
 import logging
 
 class OllamaChatModel(BaseChatModel):
-    """A LangChain chat model for Ollama API."""
+    #"""A LangChain chat model for Ollama API with streaming support."""
 
-    ollama_server: str = Field("http://ollama", description='URL of the Ollama server')
+    ollama_server: str = Field("http://localhost", description='URL of the Ollama server')
     ollama_port: str = Field("11434", description='Port of the Ollama server')
     model_name: str = Field("llama3", description='Name of the Ollama model to use')
     temperature: float = Field(0.7, description='Temperature for text generation')
     
-    def __init__(self, ollama_server="http://ollama", ollama_port="11434", model_name="deepseek-r1:7b", temperature=0.7, **kwargs):
+    def __init__(self, ollama_server="http://localhost", ollama_port="11434", model_name="llama3", temperature=0.7, **kwargs):
         super().__init__(**kwargs)
         self.ollama_server = ollama_server
         self.ollama_port = ollama_port
@@ -123,26 +123,27 @@ class OllamaChatModel(BaseChatModel):
     @property
     def _llm_type(self) -> str:
         return 'ollama'
-        
+    
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        print(f"_generate called with messages: {messages[:100]}...")
+        """Generate a chat response."""
+        print(f"Generating with messages: {str(messages)[:100]}...")
         response = self._call_ollama_api(messages)
         return self._create_chat_result(response)
     
     def _call_ollama_api(self, messages, **kwargs):
-    """Call the Ollama API to generate text."""
-    # Ensure server URL has a protocol prefix
+        #"""Call the Ollama API to generate text with streaming support."""
+        # Ensure server URL has a protocol prefix
         server_url = self.ollama_server
         if not (server_url.startswith('http://') or server_url.startswith('https://')):
             server_url = f"http://{server_url}"
         
         base_url = f"{server_url}:{self.ollama_port}/api/chat"
         
-        # Convert LangChain messages to Ollama format - more robust approach
         try:
+            # Convert LangChain messages to Ollama format
             obj = json.loads(dumps(messages))
             
-            # Try to extract content safely with fallbacks
+            # Extract content from the messages
             prompt_content = "No content provided"
             if obj and isinstance(obj, list) and len(obj) > 0:
                 if "kwargs" in obj[0] and "content" in obj[0]["kwargs"]:
@@ -156,110 +157,119 @@ class OllamaChatModel(BaseChatModel):
                 "messages": [{"role": "user", "content": prompt_content}],
                 "options": {
                     "temperature": self.temperature
-                }
+                },
+                "stream": False  # We'll handle streaming at the LangChain level
             }
             
-            # For debugging
-            print(f"Sending to: {base_url}")
-            print(f"Payload: {json.dumps(payload)[:100]}...")
+            print(f"Sending chat request to: {base_url}")
             
+            # Make the API call
             response = requests.post(base_url, json=payload)
             response.raise_for_status()
-            response_data = response.json()
-            print(f"Response: {str(response_data)[:100]}...")
-            return response_data
+            
+            # Process the response
+            response_text = response.text.strip()
+            
+            try:
+                # Parse the JSON response
+                response_data = json.loads(response_text)
+                return response_data
+            except json.JSONDecodeError as e:
+                print(f"Error parsing JSON response: {e}")
+                print(f"Response text: {response_text[:200]}...")
+                
+                # If there are multiple JSON objects, try parsing just the first one
+                if '\n' in response_text:
+                    print("Multiple JSON objects detected, extracting first one")
+                    first_line = response_text.split('\n')[0].strip()
+                    try:
+                        return json.loads(first_line)
+                    except json.JSONDecodeError:
+                        print(f"Failed to parse first line as JSON: {first_line}")
+                
+                # Return a fallback response
+                return {"message": {"content": f"Error parsing Ollama response: {str(e)}"}}
+                
         except Exception as e:
-            print(f"Error calling Ollama API: {e}")
-            print(f"Messages object: {str(messages)[:200]}")
-            return {"message": {"content": f"Error: Could not connect to Ollama server at {server_url}:{self.ollama_port}. Error: {str(e)}"}}
+            print(f"Error in Ollama API call: {str(e)}")
+            return {"message": {"content": f"Error calling Ollama API: {str(e)}"}}
     
     def _create_chat_result(self, response):
-        """Create a ChatResult from the Ollama response."""
+        #"""Create a chat result from the Ollama response."""
         try:
-            content = response.get("message", {}).get("content", "No response from model")
-            print(f"Creating chat result with content: {content[:100]}...")
+            # Extract the content from the response
+            content = None
+            
+            # Handle different response formats
+            if isinstance(response, dict):
+                if "message" in response and isinstance(response["message"], dict) and "content" in response["message"]:
+                    content = response["message"]["content"]
+                elif "response" in response:
+                    content = response["response"]
+                elif "content" in response:
+                    content = response["content"]
+            
+            if content is None:
+                content = f"Could not extract content from response: {str(response)[:100]}..."
+            
+            # Create a proper LangChain message and result
             message = ChatMessage(content=content, role="assistant")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
+            
         except Exception as e:
-            print(f"Error in _create_chat_result: {str(e)}")
-            message = ChatMessage(content=f"Error processing model response: {str(e)}", role="assistant")
+            print(f"Error creating chat result: {str(e)}")
+            message = ChatMessage(content=f"Error processing Ollama response: {str(e)}", role="assistant")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
-
+    
     def list_models(self):
-    # """List all available models in the Ollama server."""
-    # Ensure server has http:// prefix
-        server = self.ollama_server
-            if not (server.startswith('http://') or server.startswith('https://')):
-                server = f"http://{server}"
-            
-            url = f"{server}:{self.ollama_port}/api/tags"
-            print(f"Initialized OllamaChatModel with server: {server}, port: {self.ollama_port}, model: {self.model_name}")
-            print(f"Listing models from: {url}")
-            print(f"Sending GET request to {url}")
-            
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-                return response.json().get("models", [])
-            except requests.exceptions.RequestException as e:
-                print(f"Error in list_models: {e}")
-                return []
-            
-    def pull_model(self, model_name):
-    # """Pull a model from the Ollama library if not already installed."""
-    # Ensure server URL has a protocol prefix
+        #"""List all available models in the Ollama server."""
+        # Ensure server URL has a protocol prefix
         server_url = self.ollama_server
         if not (server_url.startswith('http://') or server_url.startswith('https://')):
             server_url = f"http://{server_url}"
-            
-        url = f"{server_url}:{self.ollama_port}/api/pull"
         
-        # Make sure model_name is a string and contains no extra spaces
-        model_name = model_name.strip() if isinstance(model_name, str) else str(model_name).strip()
-        
-        payload = {
-            "name": model_name
-        }
-        
-        print(f"Pulling model: {model_name}")
-        print(f"Pull URL: {url}")
-        print(f"Pull payload: {json.dumps(payload)}")
+        url = f"{server_url}:{self.ollama_port}/api/tags"
         
         try:
-            # First check if model already exists
-            models_url = f"{server_url}:{self.ollama_port}/api/tags"
-            models_response = requests.get(models_url)
-            models_response.raise_for_status()
-            models_data = models_response.json()
-            
-            # Check if model already exists
-            existing_models = [model.get('name') for model in models_data.get('models', [])]
-            print(f"Existing models: {existing_models}")
-            
-            if model_name in existing_models:
-                print(f"Model {model_name} already exists, skipping pull")
-                return True
-                
-            # Proceed with pull if model doesn't exist
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json().get("models", [])
+        except Exception as e:
+            print(f"Error listing Ollama models: {str(e)}")
+            return []
+    
+    def pull_model(self, model_name):
+        #"""Pull a model from the Ollama library."""
+        # Ensure server URL has a protocol prefix
+        server_url = self.ollama_server
+        if not (server_url.startswith('http://') or server_url.startswith('https://')):
+            server_url = f"http://{server_url}"
+        
+        url = f"{server_url}:{self.ollama_port}/api/pull"
+        
+        payload = {
+            "name": model_name.strip()
+        }
+        
+        try:
+            # Use streaming for the pull request (standard for model pulls)
             response = requests.post(url, json=payload, stream=True)
             response.raise_for_status()
             
-            # Process the streaming response
+            # Process the streaming response to track progress
             for line in response.iter_lines():
                 if line:
                     try:
-                        progress_data = json.loads(line)
-                        print(f"Pull progress: {progress_data}")
+                        progress = json.loads(line.decode('utf-8'))
+                        print(f"Pull progress: {progress}")
                     except json.JSONDecodeError:
-                        print(f"Received non-JSON response: {line}")
-                        
-            print(f"Successfully pulled model: {model_name}")
+                        print(f"Non-JSON progress: {line.decode('utf-8')}")
+            
             return True
         except Exception as e:
-            print(f"Error pulling Ollama model {model_name}: {e}")
-            print(f"Full error details: {str(e)}")
+            print(f"Error pulling Ollama model: {str(e)}")
             return False
 
 def build_page(client: chat_client.ChatClient) -> gr.Blocks:

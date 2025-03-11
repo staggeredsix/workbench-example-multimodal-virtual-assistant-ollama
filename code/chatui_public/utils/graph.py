@@ -125,12 +125,147 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
     """
     # If Ollama is enabled, use that
     if state.get("use_ollama", False):
-        return ollama.OllamaChatModel(
-            ollama_server=state["ollama_server"],
-            ollama_port=state["ollama_port"],
-            model_name=state["ollama_model"],
-            temperature=0.7
-        )
+        print(f"Using Ollama with server: {state['ollama_server']}, port: {state['ollama_port']}, model: {state['ollama_model']}")
+        try:
+            from langchain_core.language_models.chat_models import BaseChatModel
+            from langchain_core.load.dump import dumps
+            from langchain_core.messages import ChatMessage
+            from langchain_core.outputs import ChatResult, ChatGeneration
+            from pydantic import Field
+            import requests
+            import json
+            
+            class OllamaChatModel(BaseChatModel):
+                """A LangChain chat model for Ollama API with streaming support."""
+            
+                ollama_server: str = Field("http://localhost", description='URL of the Ollama server')
+                ollama_port: str = Field("11434", description='Port of the Ollama server')
+                model_name: str = Field("llama3", description='Name of the Ollama model to use')
+                temperature: float = Field(0.7, description='Temperature for text generation')
+                
+                def __init__(self, ollama_server="http://localhost", ollama_port="11434", model_name="llama3", temperature=0.7, **kwargs):
+                    super().__init__(**kwargs)
+                    self.ollama_server = ollama_server
+                    self.ollama_port = ollama_port
+                    self.model_name = model_name
+                    self.temperature = temperature
+                    print(f"Initialized OllamaChatModel with server: {ollama_server}, port: {ollama_port}, model: {model_name}")
+            
+                @property
+                def _llm_type(self) -> str:
+                    return 'ollama'
+                
+                def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                    """Generate a chat response."""
+                    print(f"Generating with messages: {str(messages)[:100]}...")
+                    response = self._call_ollama_api(messages)
+                    return self._create_chat_result(response)
+                
+                def _call_ollama_api(self, messages, **kwargs):
+                    """Call the Ollama API to generate text with streaming support."""
+                    # Ensure server URL has a protocol prefix
+                    server_url = self.ollama_server
+                    if not (server_url.startswith('http://') or server_url.startswith('https://')):
+                        server_url = f"http://{server_url}"
+                    
+                    base_url = f"{server_url}:{self.ollama_port}/api/chat"
+                    
+                    try:
+                        # Convert LangChain messages to Ollama format
+                        obj = json.loads(dumps(messages))
+                        
+                        # Extract content from the messages
+                        prompt_content = "No content provided"
+                        if obj and isinstance(obj, list) and len(obj) > 0:
+                            if "kwargs" in obj[0] and "content" in obj[0]["kwargs"]:
+                                prompt_content = obj[0]["kwargs"]["content"]
+                            elif "content" in obj[0]:
+                                prompt_content = obj[0]["content"]
+                        
+                        # Format for Ollama chat API
+                        payload = {
+                            "model": self.model_name,
+                            "messages": [{"role": "user", "content": prompt_content}],
+                            "options": {
+                                "temperature": self.temperature
+                            },
+                            "stream": False  # We'll handle streaming at the LangChain level
+                        }
+                        
+                        print(f"Sending chat request to: {base_url}")
+                        
+                        # Make the API call
+                        response = requests.post(base_url, json=payload)
+                        response.raise_for_status()
+                        
+                        # Process the response
+                        response_text = response.text.strip()
+                        
+                        try:
+                            # Parse the JSON response
+                            response_data = json.loads(response_text)
+                            return response_data
+                        except json.JSONDecodeError as e:
+                            print(f"Error parsing JSON response: {e}")
+                            print(f"Response text: {response_text[:200]}...")
+                            
+                            # If there are multiple JSON objects, try parsing just the first one
+                            if '\n' in response_text:
+                                print("Multiple JSON objects detected, extracting first one")
+                                first_line = response_text.split('\n')[0].strip()
+                                try:
+                                    return json.loads(first_line)
+                                except json.JSONDecodeError:
+                                    print(f"Failed to parse first line as JSON: {first_line}")
+                            
+                            # Return a fallback response
+                            return {"message": {"content": f"Error parsing Ollama response: {str(e)}"}}
+                            
+                    except Exception as e:
+                        print(f"Error in Ollama API call: {str(e)}")
+                        return {"message": {"content": f"Error calling Ollama API: {str(e)}"}}
+                
+                def _create_chat_result(self, response):
+                    """Create a chat result from the Ollama response."""
+                    try:
+                        # Extract the content from the response
+                        content = None
+                        
+                        # Handle different response formats
+                        if isinstance(response, dict):
+                            if "message" in response and isinstance(response["message"], dict) and "content" in response["message"]:
+                                content = response["message"]["content"]
+                            elif "response" in response:
+                                content = response["response"]
+                            elif "content" in response:
+                                content = response["content"]
+                        
+                        if content is None:
+                            content = f"Could not extract content from response: {str(response)[:100]}..."
+                        
+                        # Create a proper LangChain message and result
+                        message = ChatMessage(content=content, role="assistant")
+                        generation = ChatGeneration(message=message)
+                        return ChatResult(generations=[generation])
+                        
+                    except Exception as e:
+                        print(f"Error creating chat result: {str(e)}")
+                        message = ChatMessage(content=f"Error processing Ollama response: {str(e)}", role="assistant")
+                        generation = ChatGeneration(message=message)
+                        return ChatResult(generations=[generation])
+            
+            return OllamaChatModel(
+                ollama_server=state["ollama_server"],
+                ollama_port=state["ollama_port"],
+                model_name=state["ollama_model"],
+                temperature=0.7
+            )
+        except Exception as e:
+            print(f"Error creating Ollama model: {str(e)}")
+            # Fall back to NIM or NVIDIA API
+            print("Falling back to default model")
+            return ChatNVIDIA(model=state[model_key], temperature=0.7)
+            
     # Otherwise, use NIM or NVIDIA API as before
     elif state[use_nim_key]:
         return nim.CustomChatOpenAI(

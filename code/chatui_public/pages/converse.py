@@ -158,7 +158,7 @@ class OllamaChatModel(BaseChatModel):
                 "options": {
                     "temperature": self.temperature
                 },
-                "stream": False  # We'll handle streaming at the LangChain level
+                "stream": True  # We'll handle streaming at the LangChain level
             }
             
             print(f"Sending chat request to: {base_url}")
@@ -1540,7 +1540,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             ollama_answer_model: str,
             chat_history: List[Tuple[str, str]],
         ) -> Any:
-
+        
             inputs = {"question": question, 
                     "generator_model_id": model_generator, 
                     "router_model_id": model_router, 
@@ -1642,7 +1642,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     print(f"Error in _stream_predict: {str(e)}")
                     print(f"Traceback: {trace}")
                     yield "", chat_history + [[question, f"*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: {str(e)}"]], gr.update(show_label=False)
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/HEAD
         # Submit a sample query
         _my_build_stream = functools.partial(_stream_predict, client, app)
 

@@ -158,7 +158,7 @@ class OllamaChatModel(BaseChatModel):
                 "options": {
                     "temperature": self.temperature
                 },
-                "stream": True  # We'll handle streaming at the LangChain level
+                "stream": False  # We'll handle streaming at the LangChain level
             }
             
             print(f"Sending chat request to: {base_url}")
@@ -341,12 +341,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
         ollama_server_state = gr.State("http://localhost")
         ollama_port_state = gr.State("11434") 
         ollama_model_state = gr.State("llama3")
-        ollama_router_model_state = gr.State("")
-        ollama_retrieval_model_state = gr.State("")
-        ollama_generator_model_state = gr.State("")
-        ollama_hallucination_model_state = gr.State("")
-        ollama_answer_model_state = gr.State("")
-
 
         """ Build the Chat Application. """
         
@@ -625,10 +619,10 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                         
                         with gr.Row():
                             ollama_model = gr.Textbox(
-                                label="Default Model Name",
+                                label="Model Name",
                                 placeholder="llama3",
                                 value="llama3",
-                                info="Default model name to use for all components"
+                                info="Name of the Ollama model to use"
                             )
                             refresh_ollama_models = gr.Button(
                                 value="Refresh Models",
@@ -641,46 +635,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             info="Available models on the Ollama server",
                             interactive=True
                         )
-                        
-                        # Add component-specific model settings
-                        gr.Markdown("### Component-Specific Models (Optional)")
-                        gr.Markdown("You can specify different models for each component. If not specified, the default model will be used.")
-                        
-                        with gr.Row():
-                            ollama_router_model = gr.Textbox(
-                                label="Router Model",
-                                placeholder="llama3",
-                                value="",
-                                info="Model to use for routing questions"
-                            )
-                            ollama_retrieval_model = gr.Textbox(
-                                label="Retrieval Grader Model",
-                                placeholder="llama3",
-                                value="",
-                                info="Model to use for grading document relevance"
-                            )
-                        
-                        with gr.Row():
-                            ollama_generator_model = gr.Textbox(
-                                label="Generator Model",
-                                placeholder="llama3",
-                                value="",
-                                info="Model to use for generating answers"
-                            )
-                            ollama_hallucination_model = gr.Textbox(
-                                label="Hallucination Grader Model",
-                                placeholder="llama3",
-                                value="",
-                                info="Model to use for checking hallucinations"
-                            )
-                        
-                        with gr.Row():
-                            ollama_answer_model = gr.Textbox(
-                                label="Answer Grader Model",
-                                placeholder="llama3",
-                                value="",
-                                info="Model to use for grading answer quality"
-                            )
                         
                         with gr.Row():
                             pull_model = gr.Button(
@@ -1399,90 +1353,18 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             status, models_update = _pull_ollama_model(server, port, model_name)
             return status, models_update
             
-        def _update_ollama_state(use_ollama_val, server, port, model, 
-                         router_model, retrieval_model, generator_model, 
-                         hallucination_model, answer_model):
-            return (use_ollama_val, server, port, model, 
-                    router_model, retrieval_model, generator_model, 
-                    hallucination_model, answer_model)
+        def _update_ollama_state(use_ollama_val, server, port, model):
+            return use_ollama_val, server, port, model
         
         # Connect Ollama UI components to functions
-        use_ollama.change(_update_ollama_state, 
-                 [use_ollama, ollama_server, ollama_port, ollama_model,
-                  ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                  ollama_hallucination_model, ollama_answer_model], 
-                 [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                  ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                  ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_server.change(_update_ollama_state, 
-                            [use_ollama, ollama_server, ollama_port, ollama_model,
-                            ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                            ollama_hallucination_model, ollama_answer_model], 
-                            [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                            ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                            ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_port.change(_update_ollama_state, 
-                        [use_ollama, ollama_server, ollama_port, ollama_model,
-                        ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                        ollama_hallucination_model, ollama_answer_model], 
-                        [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                        ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                        ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_model.change(_update_ollama_state, 
-                        [use_ollama, ollama_server, ollama_port, ollama_model,
-                            ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                            ollama_hallucination_model, ollama_answer_model], 
-                        [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                            ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                            ollama_hallucination_model_state, ollama_answer_model_state])
-
-        # Add event handlers for component-specific model fields
-        ollama_router_model.change(_update_ollama_state, 
-                                [use_ollama, ollama_server, ollama_port, ollama_model,
-                                ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                                ollama_hallucination_model, ollama_answer_model], 
-                                [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                                ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                                ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_retrieval_model.change(_update_ollama_state, 
-                                    [use_ollama, ollama_server, ollama_port, ollama_model,
-                                    ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                                    ollama_hallucination_model, ollama_answer_model], 
-                                    [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                                    ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                                    ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_generator_model.change(_update_ollama_state, 
-                                    [use_ollama, ollama_server, ollama_port, ollama_model,
-                                    ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                                    ollama_hallucination_model, ollama_answer_model], 
-                                    [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                                    ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                                    ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_hallucination_model.change(_update_ollama_state, 
-                                        [use_ollama, ollama_server, ollama_port, ollama_model,
-                                        ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                                        ollama_hallucination_model, ollama_answer_model], 
-                                        [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                                        ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                                        ollama_hallucination_model_state, ollama_answer_model_state])
-
-        ollama_answer_model.change(_update_ollama_state, 
-                                [use_ollama, ollama_server, ollama_port, ollama_model,
-                                ollama_router_model, ollama_retrieval_model, ollama_generator_model,
-                                ollama_hallucination_model, ollama_answer_model], 
-                                [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state,
-                                ollama_router_model_state, ollama_retrieval_model_state, ollama_generator_model_state,
-                                ollama_hallucination_model_state, ollama_answer_model_state])
-
-        refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
-        available_models.change(lambda x: x, [available_models], [ollama_model])
-        pull_model.click(_handle_pull_model, [ollama_server, ollama_port, ollama_model], [pull_status, available_models])
+        use_ollama.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                         [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_server.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                            [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_port.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                          [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
+        ollama_model.change(_update_ollama_state, [use_ollama, ollama_server, ollama_port, ollama_model], 
+                           [use_ollama_state, ollama_server_state, ollama_port_state, ollama_model_state])
 
         refresh_ollama_models.click(_refresh_ollama_models, [ollama_server, ollama_port], [available_models])
         available_models.change(lambda x: x, [available_models], [ollama_model])
@@ -1533,119 +1415,59 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             ollama_server: str,
             ollama_port: str,
             ollama_model: str,
-            ollama_router_model: str,
-            ollama_retrieval_model: str,
-            ollama_generator_model: str,
-            ollama_hallucination_model: str,
-            ollama_answer_model: str,
             chat_history: List[Tuple[str, str]],
         ) -> Any:
-        
+
             inputs = {"question": question, 
-                    "generator_model_id": model_generator, 
-                    "router_model_id": model_router, 
-                    "retrieval_model_id": model_retrieval, 
-                    "hallucination_model_id": model_hallucination, 
-                    "answer_model_id": model_answer, 
-                    "prompt_generator": prompt_generator, 
-                    "prompt_router": prompt_router, 
-                    "prompt_retrieval": prompt_retrieval, 
-                    "prompt_hallucination": prompt_hallucination, 
-                    "prompt_answer": prompt_answer, 
-                    "router_use_nim": router_use_nim, 
-                    "retrieval_use_nim": retrieval_use_nim, 
-                    "generator_use_nim": generator_use_nim, 
-                    "hallucination_use_nim": hallucination_use_nim, 
-                    "nim_generator_ip": nim_generator_ip,
-                    "nim_router_ip": nim_router_ip,
-                    "nim_retrieval_ip": nim_retrieval_ip,
-                    "nim_hallucination_ip": nim_hallucination_ip,
-                    "nim_answer_ip": nim_answer_ip,
-                    "nim_generator_port": nim_generator_port,
-                    "nim_router_port": nim_router_port,
-                    "nim_retrieval_port": nim_retrieval_port,
-                    "nim_hallucination_port": nim_hallucination_port,
-                    "nim_answer_port": nim_answer_port,
-                    "nim_generator_id": nim_generator_id,
-                    "nim_router_id": nim_router_id,
-                    "nim_retrieval_id": nim_retrieval_id,
-                    "nim_hallucination_id": nim_hallucination_id,
-                    "nim_answer_id": nim_answer_id,
-                    "use_ollama": use_ollama,
-                    "ollama_server": ollama_server,
-                    "ollama_port": ollama_port,
-                    "ollama_model": ollama_model,
-                    "ollama_router_model": ollama_router_model,
-                    "ollama_retrieval_model": ollama_retrieval_model,
-                    "ollama_generator_model": ollama_generator_model,
-                    "ollama_hallucination_model": ollama_hallucination_model,
-                    "ollama_answer_model": ollama_answer_model,
-                    "answer_use_nim": answer_use_nim}
+                      "generator_model_id": model_generator, 
+                      "router_model_id": model_router, 
+                      "retrieval_model_id": model_retrieval, 
+                      "hallucination_model_id": model_hallucination, 
+                      "answer_model_id": model_answer, 
+                      "prompt_generator": prompt_generator, 
+                      "prompt_router": prompt_router, 
+                      "prompt_retrieval": prompt_retrieval, 
+                      "prompt_hallucination": prompt_hallucination, 
+                      "prompt_answer": prompt_answer, 
+                      "router_use_nim": router_use_nim, 
+                      "retrieval_use_nim": retrieval_use_nim, 
+                      "generator_use_nim": generator_use_nim, 
+                      "hallucination_use_nim": hallucination_use_nim, 
+                      "nim_generator_ip": nim_generator_ip,
+                      "nim_router_ip": nim_router_ip,
+                      "nim_retrieval_ip": nim_retrieval_ip,
+                      "nim_hallucination_ip": nim_hallucination_ip,
+                      "nim_answer_ip": nim_answer_ip,
+                      "nim_generator_port": nim_generator_port,
+                      "nim_router_port": nim_router_port,
+                      "nim_retrieval_port": nim_retrieval_port,
+                      "nim_hallucination_port": nim_hallucination_port,
+                      "nim_answer_port": nim_answer_port,
+                      "nim_generator_id": nim_generator_id,
+                      "nim_router_id": nim_router_id,
+                      "nim_retrieval_id": nim_retrieval_id,
+                      "nim_hallucination_id": nim_hallucination_id,
+                      "nim_answer_id": nim_answer_id,
+                      "use_ollama": use_ollama,
+                      "ollama_server": ollama_server,
+                      "ollama_port": ollama_port,
+                      "ollama_model": ollama_model,
+                      "answer_use_nim": answer_use_nim}
             
             if not valid_input(question):
                 yield "", chat_history + [[str(question), "*** ERR: Unable to process query. Query cannot be empty. ***"]], gr.update(show_label=False)
             else: 
                 try:
                     actions = {}
-                    final_value = None
-                    
                     for output in app.stream(inputs):
                         actions.update(output)
                         yield "", chat_history + [[question, "Working on getting you the best answer..."]], gr.update(value=actions)
-                        
                         for key, value in output.items():
                             final_value = value
-                    
-                    print(f"Final value type: {type(final_value)}")
-                    print(f"Final value: {str(final_value)[:200]}...")
-                    
-                    # Handle different response formats
-                    response_text = ""
-                    
-                    if final_value is None:
-                        response_text = "No response generated."
-                    elif isinstance(final_value, dict):
-                        # Try to extract 'generation' or fallback to string representation
-                        if "generation" in final_value:
-                            response_text = final_value["generation"]
-                        else:
-                            # If there's no 'generation' key, let's check for other common keys
-                            for key in ["content", "message", "response", "text", "result"]:
-                                if key in final_value:
-                                    if isinstance(final_value[key], dict) and "content" in final_value[key]:
-                                        response_text = final_value[key]["content"]
-                                        break
-                                    else:
-                                        response_text = str(final_value[key])
-                                        break
-                            
-                            # If we still don't have a response, just convert the whole dict to string
-                            if not response_text:
-                                response_text = str(final_value)
-                    elif isinstance(final_value, str):
-                        # If final_value is already a string, use it directly
-                        response_text = final_value
-                    else:
-                        # For any other type, convert to string
-                        response_text = str(final_value)
-                    
-                    # Process the response_text to remove <think> tags if present
-                    import re
-                    if isinstance(response_text, str):
-                        response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
-                    
-                    yield "", chat_history + [[question, response_text]], gr.update(show_label=False)
-                
+                    yield "", chat_history + [[question, final_value["generation"]]], gr.update(show_label=False)
                 except Exception as e: 
-                    import traceback
-                    trace = traceback.format_exc()
-                    print(f"Error in _stream_predict: {str(e)}")
-                    print(f"Traceback: {trace}")
-                    yield "", chat_history + [[question, f"*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: {str(e)}"]], gr.update(show_label=False)
-<<<<<<< HEAD
+                    yield "", chat_history + [[question, "*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: " + str(e)]], gr.update(show_label=False)
 
-=======
->>>>>>> origin/HEAD
         # Submit a sample query
         _my_build_stream = functools.partial(_stream_predict, client, app)
 
@@ -1685,11 +1507,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             ollama_server_state,
                             ollama_port_state,
                             ollama_model_state,
-                            ollama_router_model_state,
-                            ollama_retrieval_model_state,
-                            ollama_generator_model_state,
-                            ollama_hallucination_model_state,
-                            ollama_answer_model_state,
                             chatbot], [msg, chatbot, actions]
         )
 
@@ -1729,11 +1546,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             ollama_server_state,
                             ollama_port_state,
                             ollama_model_state,
-                            ollama_router_model_state,
-                            ollama_retrieval_model_state,
-                            ollama_generator_model_state,
-                            ollama_hallucination_model_state,
-                            ollama_answer_model_state,
                             chatbot], [msg, chatbot, actions]
         )
 
@@ -1773,11 +1585,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             ollama_server_state,
                             ollama_port_state,
                             ollama_model_state,
-                            ollama_router_model_state,
-                            ollama_retrieval_model_state,
-                            ollama_generator_model_state,
-                            ollama_hallucination_model_state,
-                            ollama_answer_model_state,
                             chatbot], [msg, chatbot, actions]
         )
 
@@ -1817,11 +1624,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             ollama_server_state,
                             ollama_port_state,
                             ollama_model_state,
-                            ollama_router_model_state,
-                            ollama_retrieval_model_state,
-                            ollama_generator_model_state,
-                            ollama_hallucination_model_state,
-                            ollama_answer_model_state,
                             chatbot], [msg, chatbot, actions]
         )
 
@@ -1861,11 +1663,6 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                             ollama_server_state,
                             ollama_port_state,
                             ollama_model_state,
-                            ollama_router_model_state,
-                            ollama_retrieval_model_state,
-                            ollama_generator_model_state,
-                            ollama_hallucination_model_state,
-                            ollama_answer_model_state,
                             chatbot], [msg, chatbot, actions]
         )
 

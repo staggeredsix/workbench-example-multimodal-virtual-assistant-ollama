@@ -1642,10 +1642,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
                     print(f"Error in _stream_predict: {str(e)}")
                     print(f"Traceback: {trace}")
                     yield "", chat_history + [[question, f"*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: {str(e)}"]], gr.update(show_label=False)
-<<<<<<< HEAD
 
-=======
->>>>>>> origin/HEAD
         # Submit a sample query
         _my_build_stream = functools.partial(_stream_predict, client, app)
 

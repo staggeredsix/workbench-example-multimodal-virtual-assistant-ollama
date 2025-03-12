@@ -307,26 +307,15 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
             # Fall back to NIM or NVIDIA API
             print("Falling back to default model")
             return ChatNVIDIA(model=state[model_key], temperature=0.7)
-            
-    # Otherwise, use NIM or NVIDIA API as before
-    elif state[use_nim_key]:
+    # Use NIM if configured        
+    elif state.get(use_nim_key, False):
         return nim.CustomChatOpenAI(
             custom_endpoint=state[nim_ip_key], 
             port=state[nim_port_key] if len(state[nim_port_key]) > 0 else "8000",
             model_name=state[nim_id_key] if len(state[nim_id_key]) > 0 else "meta/llama3-8b-instruct",
             temperature=0.7
         )
-    else:
-        return ChatNVIDIA(model=state[model_key], temperature=0.7)
-            
-    # Otherwise, use NIM or NVIDIA API as before
-    elif state[use_nim_key]:
-        return nim.CustomChatOpenAI(
-            custom_endpoint=state[nim_ip_key], 
-            port=state[nim_port_key] if len(state[nim_port_key]) > 0 else "8000",
-            model_name=state[nim_id_key] if len(state[nim_id_key]) > 0 else "meta/llama3-8b-instruct",
-            temperature=0.7
-        )
+    # Default to NVIDIA API
     else:
         return ChatNVIDIA(model=state[model_key], temperature=0.7)
 

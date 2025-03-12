@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3.9"  # (Remove this if running `docker compose` instead of `docker-compose`)
 
 services:
   ollama:
@@ -21,7 +21,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, utility, compute]
+              capabilities: [gpu]
     runtime: nvidia
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://ollama:11434/"]
@@ -32,7 +32,7 @@ services:
 
 networks:
   workbench:
-    external: false
+    external: true  # Ensures it connects to AI Workbench network
 
 volumes:
   ollama_data:

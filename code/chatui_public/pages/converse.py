@@ -158,7 +158,7 @@ class OllamaChatModel(BaseChatModel):
                 "options": {
                     "temperature": self.temperature
                 },
-                "stream": False  # We'll handle streaming at the LangChain level
+                "stream": True  # We'll handle streaming at the LangChain level
             }
             
             print(f"Sending chat request to: {base_url}")
@@ -1417,7 +1417,7 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             ollama_model: str,
             chat_history: List[Tuple[str, str]],
         ) -> Any:
-
+        
             inputs = {"question": question, 
                       "generator_model_id": model_generator, 
                       "router_model_id": model_router, 
@@ -1459,15 +1459,61 @@ def build_page(client: chat_client.ChatClient) -> gr.Blocks:
             else: 
                 try:
                     actions = {}
+                    final_value = None
+                    
                     for output in app.stream(inputs):
                         actions.update(output)
                         yield "", chat_history + [[question, "Working on getting you the best answer..."]], gr.update(value=actions)
+                        
                         for key, value in output.items():
                             final_value = value
-                    yield "", chat_history + [[question, final_value["generation"]]], gr.update(show_label=False)
+                    
+                    print(f"Final value type: {type(final_value)}")
+                    print(f"Final value: {str(final_value)[:200]}...")
+                    
+                    # Handle different response formats
+                    response_text = ""
+                    
+                    if final_value is None:
+                        response_text = "No response generated."
+                    elif isinstance(final_value, dict):
+                        # Try to extract 'generation' or fallback to string representation
+                        if "generation" in final_value:
+                            response_text = final_value["generation"]
+                        else:
+                            # If there's no 'generation' key, let's check for other common keys
+                            for key in ["content", "message", "response", "text", "result"]:
+                                if key in final_value:
+                                    if isinstance(final_value[key], dict) and "content" in final_value[key]:
+                                        response_text = final_value[key]["content"]
+                                        break
+                                    else:
+                                        response_text = str(final_value[key])
+                                        break
+                            
+                            # If we still don't have a response, just convert the whole dict to string
+                            if not response_text:
+                                response_text = str(final_value)
+                    elif isinstance(final_value, str):
+                        # If final_value is already a string, use it directly
+                        response_text = final_value
+                    else:
+                        # For any other type, convert to string
+                        response_text = str(final_value)
+                    
+                    # Process the response_text to remove <think> tags if present
+                    import re
+                    if isinstance(response_text, str):
+                        response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+                    
+                    yield "", chat_history + [[question, response_text]], gr.update(show_label=False)
+                
                 except Exception as e: 
-                    yield "", chat_history + [[question, "*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: " + str(e)]], gr.update(show_label=False)
-
+                    import traceback
+                    trace = traceback.format_exc()
+                    print(f"Error in _stream_predict: {str(e)}")
+                    print(f"Traceback: {trace}")
+                    yield "", chat_history + [[question, f"*** ERR: Unable to process query. See Monitor tab for details. ***\n\nException: {str(e)}"]], gr.update(show_label=False)
         # Submit a sample query
         _my_build_stream = functools.partial(_stream_predict, client, app)
 

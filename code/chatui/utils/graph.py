@@ -125,7 +125,18 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
     """
     # If Ollama is enabled, use that
     if state.get("use_ollama", False):
-        print(f"Using Ollama with server: {state['ollama_server']}, port: {state['ollama_port']}, model: {state['ollama_model']}")
+        # This is the model component-specific field for this request
+        component_model = state.get("ollama_model", "llama3")
+        
+        # Check if there's a component-specific model override
+        # For example, for the router component, we'd have "ollama_router_model"
+        component_type = model_key.replace("_model_id", "")  # Extract component type (e.g., "router", "generator")
+        component_specific_model = state.get(f"ollama_{component_type}_model")
+        
+        # Use component-specific model if available, otherwise use the default
+        model_to_use = component_specific_model if component_specific_model else component_model
+        
+        print(f"Using Ollama for {component_type} with model: {model_to_use}")
         try:
             from langchain_core.language_models.chat_models import BaseChatModel
             from langchain_core.load.dump import dumps
@@ -287,7 +298,7 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
             return OllamaChatModel(
                 ollama_server=state["ollama_server"],
                 ollama_port=state["ollama_port"],
-                model_name=state["ollama_model"],
+                model_name=model_to_use,
                 temperature=0.7
             )
         except Exception as e:
@@ -296,6 +307,17 @@ def get_llm(state, model_key, use_nim_key, nim_ip_key, nim_port_key, nim_id_key)
             # Fall back to NIM or NVIDIA API
             print("Falling back to default model")
             return ChatNVIDIA(model=state[model_key], temperature=0.7)
+            
+    # Otherwise, use NIM or NVIDIA API as before
+    elif state[use_nim_key]:
+        return nim.CustomChatOpenAI(
+            custom_endpoint=state[nim_ip_key], 
+            port=state[nim_port_key] if len(state[nim_port_key]) > 0 else "8000",
+            model_name=state[nim_id_key] if len(state[nim_id_key]) > 0 else "meta/llama3-8b-instruct",
+            temperature=0.7
+        )
+    else:
+        return ChatNVIDIA(model=state[model_key], temperature=0.7)
             
     # Otherwise, use NIM or NVIDIA API as before
     elif state[use_nim_key]:

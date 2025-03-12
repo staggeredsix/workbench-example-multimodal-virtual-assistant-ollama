@@ -377,61 +377,32 @@ def generate(state):
     )
     
     rag_chain = prompt | llm | StrOutputParser()
-    generation = rag_chain.invoke({"context": documents, "question": question})
-    return {"documents": documents, "question": question, "generation": generation}
-
-
-def grade_documents(state):
-    """
-    Determines whether the retrieved documents are relevant to the question
-    If any document is not relevant, we will set a flag to run web search
-
-    Args:
-        state (dict): The current graph state
-
-    Returns:
-        state (dict): Filtered out irrelevant documents and updated web_search state
-    """
-
-    print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
-    question = state["question"]
-    documents = state["documents"]
-
-    # Score each doc
-    filtered_docs = []
-    web_search = "No"
-    prompt = PromptTemplate(
-        template=state["prompt_retrieval"],
-        input_variables=["question", "document"],
-    )
     
-    llm = get_llm(
-        state,
-        "retrieval_model_id", 
-        "retrieval_use_nim", 
-        "nim_retrieval_ip", 
-        "nim_retrieval_port", 
-        "nim_retrieval_id"
-    )
+    try:
+        # Generate response
+        generation = rag_chain.invoke({"context": documents, "question": question})
+        
+        # Ensure generation is a string
+        if not isinstance(generation, str):
+            print(f"Warning: generation is not a string, converting. Type: {type(generation)}")
+            generation = str(generation)
+            
+        # Process the generation to remove <think> tags if present
+        import re
+        generation = re.sub(r'<think>.*?</think>', '', generation, flags=re.DOTALL)
+        
+        # Return the state with the generation
+        return {"documents": documents, "question": question, "generation": generation}
     
-    retrieval_grader = prompt | llm | JsonOutputParser()
-    for d in documents:
-        score = retrieval_grader.invoke(
-            {"question": question, "document": d.page_content}
-        )
-        grade = score["score"]
-        # Document relevant
-        if grade.lower() == "yes":
-            print("---GRADE: DOCUMENT RELEVANT---")
-            filtered_docs.append(d)
-        # Document not relevant
-        else:
-            print("---GRADE: DOCUMENT NOT RELEVANT---")
-            # We do not include the document in filtered_docs
-            continue
-    # We set a flag to indicate that we want to run web search if insufficient relevant docs found
-    web_search = "Yes" if len(filtered_docs) < 1 else "No"
-    return {"documents": filtered_docs, "question": question, "web_search": web_search}
+    except Exception as e:
+        import traceback
+        trace = traceback.format_exc()
+        print(f"Error in generate: {str(e)}")
+        print(f"Traceback: {trace}")
+        
+        # Return a meaningful error message as the generation
+        error_message = f"Error generating response: {str(e)}"
+        return {"documents": documents, "question": question, "generation": error_message}
 
 
 def web_search(state):
